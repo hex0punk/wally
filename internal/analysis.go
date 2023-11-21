@@ -12,17 +12,28 @@ import (
 	"strings"
 )
 
+type IndicatorType int
+
+const (
+	SERVICE IndicatorType = iota
+	CALLER
+)
+
 type FuncInfo struct {
-	Package string
-	Type    string
-	Name    string
-	Route   string
+	Package   string
+	Type      string
+	Name      string
+	Route     string
+	Signature *types.Signature
 }
 
 type RouteIndicator struct {
-	Package  string
-	Type     string
-	Function string
+	Package        string
+	Type           string
+	Function       string
+	RouteParamPos  int
+	RouteParamName string
+	IndicatorType  IndicatorType
 }
 
 type RouteMatch struct {
@@ -38,27 +49,32 @@ type Navigator struct {
 	RouteMatches    []RouteMatch
 }
 
-func (ri *FuncInfo) Match(indicators []RouteIndicator) bool {
+func (fi *FuncInfo) Match(indicators []RouteIndicator) *RouteIndicator {
+	var match *RouteIndicator
 	for _, ind := range indicators {
-		if ri.Package != ind.Package {
-			return false
+		ind := ind
+		if fi.Package != ind.Package {
+			continue
 		}
-		if ri.Name != ind.Function {
-			return false
+		if fi.Name != ind.Function {
+			continue
 		}
-		if ri.Type != "" && ri.Type != ind.Type {
-			return false
+		if fi.Type != "" && fi.Type != ind.Type {
+			continue
 		}
+		match = &ind
 	}
-	return true
+	return match
 }
 
 func InitIndicators() []RouteIndicator {
 	return []RouteIndicator{
 		{
-			Package:  "github.com/hashicorp/nomad/nomad",
-			Type:     "rpcHandler",
-			Function: "forward",
+			Package:        "github.com/hashicorp/nomad/nomad",
+			Type:           "",
+			Function:       "forward",
+			RouteParamName: "method",
+			RouteParamPos:  0,
 		},
 	}
 }
@@ -83,7 +99,6 @@ func (n *Navigator) MapRoutes() {
 func PackageMatches(pkgStr string, indicators []RouteIndicator) bool {
 	pkgStr = strings.Trim(pkgStr, "\"")
 	for _, indicator := range indicators {
-		//fmt.Println("comparing " + pkgStr + " to " + indicator.Package)
 		if pkgStr == indicator.Package {
 			return true
 		}
@@ -107,24 +122,19 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 			return true
 		}
 
-		if !funcInfo.Match(n.RouteIndicators) {
+		//fmt.Println("match is here", funcInfo.Package, funcInfo.Name)
+		res := funcInfo.Match(n.RouteIndicators)
+		if res == nil {
 			// Don't keep going deeper in the node if there are no matches by now?
 			return true
 		}
 
-		// If GetFuncInfo didn't return a pkg name, then this is likely
-		// not a package.func but a struct.func
-		//pkgName := ""
-		//if funcInfo.Package == "" {
-		//	pkgName = ce.
-		//}
-
 		// Now get the route
-		routeOrMethod := ResolveParam(0, ce, pkg.TypesInfo)
+		routeOrMethod := n.ResolveParam(res.RouteParamPos, ce, pkg.TypesInfo)
 
 		pos := pkg.Fset.Position(funExpr.Pos())
 		match := RouteMatch{
-			Indicator:   n.RouteIndicators[0],
+			Indicator:   *res,
 			RouteString: routeOrMethod,
 			Pos:         pos,
 		}
@@ -134,9 +144,16 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 	})
 }
 
-func ResolveParam(pos int, ce *ast.CallExpr, info *types.Info) string {
-	if ce.Args != nil && len(ce.Args) > 0 {
-		argMethod := ce.Args[pos]
+func (n *Navigator) ResolveParam(pos int, param *ast.CallExpr, info *types.Info) string {
+	// First get the pos for the arg
+	//pos, err := n.GetParamPos(sig, info, name)
+	//if err != nil {
+	//	// we failed at getting param, return an empty string and be sad (for now)
+	//	return ""
+	//}
+	if param.Args != nil && len(param.Args) > 0 {
+		argMethod := param.Args[pos]
+
 		// This is not enough if the value is a variable to a constant
 		if _, ok := argMethod.(*ast.BasicLit); ok {
 			return argMethod.(*ast.BasicLit).Value
@@ -150,7 +167,13 @@ func ResolveParam(pos int, ce *ast.CallExpr, info *types.Info) string {
 				return con.Val().String()
 			}
 		}
-
+		if se, ok := argMethod.(*ast.Ident); ok {
+			o1 := info.ObjectOf(se)
+			// TODO: Write a func for this
+			if con, ok := o1.(*types.Const); ok {
+				return con.Val().String()
+			}
+		}
 	}
 	return ""
 }
@@ -176,28 +199,41 @@ func (n *Navigator) GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, err
 		return nil, errors.New("unable to get func data")
 	}
 
-	resPkg := ""
-	resPkg = GetName(sel.X)
 	funcName := GetName(sel.Sel)
-	if resPkg == "" && funcName != "" {
+	pkgPath, err := n.ResolvePackageFromIdent(sel.Sel, info)
+	if err != nil && funcName != "" {
 		// Try to get pkg name from the selector, as hti si likely not a pkg.func
 		// but a struct.fun
-		pkgPath, err := n.ResolvePackageFromIdent(sel.Sel, info)
+		pkgPath, err = n.ResolvePackageFromIdent(sel.X, info)
 		if err != nil {
 			return nil, err
 		}
-		// TODO: ugly
-		resPkg = pkgPath
 	}
 
 	return &FuncInfo{
-		Package: resPkg,
+		Package: pkgPath,
 		//Type: nil,
 		Name: funcName,
 	}, nil
 }
 
+func (n *Navigator) GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Signature, error) {
+	idt, ok := expr.(*ast.Ident)
+	if !ok {
+		n.Logger.Debug("Could not get signature as its not an ident")
+		return nil, errors.New("not an ident for expr")
+	}
+
+	o1 := info.ObjectOf(idt)
+	if f, ok := o1.(*types.Func); ok {
+		return f.Type().(*types.Signature), nil
+	}
+	n.Logger.Debug("Could not get signature")
+	return nil, errors.New("Unable to get signature")
+}
+
 // ResolvePackageFromIdent TODO: This may be useful to get receiver type of func
+// Also, wrong name, its from an Expr, not from Idt, technically
 func (n *Navigator) ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (string, error) {
 	idt, ok := expr.(*ast.Ident)
 	if !ok {
@@ -209,21 +245,20 @@ func (n *Navigator) ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (st
 		// TODO: Can also get the plain pkg name without path with `o1.Pkg().Name()`
 		return o1.Pkg().Path(), nil
 	}
-	//if f, ok := o1.(*types.Func); ok {
-	//	sig := f.Type().(*types.Signature)
-	//	if sig.Recv() != nil && sig.Recv().Type() != nil {
-	//		n.Logger.Debug("Found func Params RECVTYPE: " + sig.Recv().Type().String())
-	//	}
-	//}
-	//switch va := o1.(type) {
-	//case *types.Func:
-	//	if va.Pkg() != nil {
-	//		return va.Pkg().Path(), nil
-	//	}
-	//}
 
 	errStr := fmt.Sprintf("unable to get package name from Ident")
 	return "", errors.New(errStr)
+}
+
+func (n *Navigator) GetParamPos(sig *types.Signature, info *types.Info, paramName string) (int, error) {
+	numParams := sig.Params().Len()
+	for i := 0; i <= numParams; i++ {
+		param := sig.Params().At(0)
+		if param.Name() == paramName {
+			return i, nil
+		}
+	}
+	return 0, errors.New("Unable to find param pos")
 }
 
 func (n *Navigator) PrintResults() {
