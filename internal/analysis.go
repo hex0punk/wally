@@ -38,7 +38,6 @@ type RouteIndicator struct {
 
 type RouteMatch struct {
 	Indicator   RouteIndicator
-	File        string
 	RouteString string
 	Pos         token.Position
 }
@@ -75,20 +74,6 @@ func InitIndicators() []RouteIndicator {
 			Function:       "forward",
 			RouteParamName: "method",
 			RouteParamPos:  0,
-		},
-		{
-			Package:        "fs/services/webber/frontend",
-			Type:           "",
-			Function:       "Register",
-			RouteParamName: "pattern",
-			RouteParamPos:  1,
-		},
-		{
-			Package:        "fs/skeleton",
-			Type:           "",
-			Function:       "RegisterAuthedHttpHandler",
-			RouteParamName: "pattern",
-			RouteParamPos:  1,
 		},
 	}
 }
@@ -136,24 +121,25 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 			return true
 		}
 
-		//fmt.Println("match is here", funcInfo.Package, funcInfo.Name)
 		res := funcInfo.Match(n.RouteIndicators)
 		if res == nil {
 			// Don't keep going deeper in the node if there are no matches by now?
 			return true
 		}
 
-		sel, _ := funExpr.(*ast.SelectorExpr)
+		// Now try to get the method value
+		// TODO: move this to a dedicated function, or as part of GetFuncInfo
+		sel, ok := funExpr.(*ast.SelectorExpr)
 		routeOrMethod := ""
-		if sel != nil {
+		if ok {
 			sig, err := n.GetFuncSignature(sel.Sel, pkg.TypesInfo)
-			if err == nil {
-				fmt.Println("found sig", sig, sig.String())
+			if err != nil {
+				routeOrMethod = n.ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
+			} else {
 				routeOrMethod = n.ResolveParamFromName(res.RouteParamName, sig, ce, pkg.TypesInfo)
 			}
 		} else {
 			routeOrMethod = n.ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
-			//routeOrMethod = ""
 		}
 
 		pos := pkg.Fset.Position(funExpr.Pos())
@@ -255,35 +241,19 @@ func (n *Navigator) GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, err
 func (n *Navigator) GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Signature, error) {
 	idt, ok := expr.(*ast.Ident)
 	if !ok {
-		n.Logger.Debug("Could not get signature as its not an ident")
 		return nil, errors.New("not an ident for expr")
 	}
 
 	o1 := info.ObjectOf(idt)
-	if f, ok := o1.(*types.Func); ok {
-		return f.Type().(*types.Signature), nil
+	switch va := o1.(type) {
+	case *types.Func:
+		return va.Type().(*types.Signature), nil
+	case *types.Var:
+		// It's a function from a struct field
+		return va.Type().(*types.Signature), nil
+	default:
+		return nil, errors.New("Unable to get signature")
 	}
-
-	if v, ok := o1.(*types.Var); ok {
-		return v.Type().(*types.Signature), nil
-	}
-
-	//sig := expr.Type().(*types.Signature)
-
-	//switch va := o1.(type) {
-	//case *types.Func:
-	//	fmt.Println("func ", va.Name())
-	//case *types.Const:
-	//	fmt.Println("const ", va.Name())
-	//case *types.Var:
-	//	fmt.Println("var ", va.Type().(*types.Signature))
-	//case *types.Builtin:
-	//	fmt.Println("builtin ", va.Name())
-	//default:
-	//	fmt.Println("DEFAULT", va.String())
-	//}
-	//n.Logger.Debug("Could not get signature")
-	return nil, errors.New("Unable to get signature")
 }
 
 // ResolvePackageFromIdent TODO: This may be useful to get receiver type of func
@@ -307,7 +277,7 @@ func (n *Navigator) ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (st
 func (n *Navigator) GetParamPos(sig *types.Signature, info *types.Info, paramName string) (int, error) {
 	numParams := sig.Params().Len()
 	for i := 0; i <= numParams; i++ {
-		param := sig.Params().At(0)
+		param := sig.Params().At(i)
 		if param.Name() == paramName {
 			return i, nil
 		}
@@ -317,8 +287,10 @@ func (n *Navigator) GetParamPos(sig *types.Signature, info *types.Info, paramNam
 
 func (n *Navigator) PrintResults() {
 	for _, match := range n.RouteMatches {
-		fmt.Println("===========MATCH===============", match.File)
-		fmt.Println("File: ", match.File)
+		// TODO: This is printing the values from the indicator
+		// That's fine, and it works but it should print values
+		// from those captured during analysis, just in case
+		fmt.Println("===========MATCH===============")
 		fmt.Println("Package: ", match.Indicator.Package)
 		fmt.Println("Function: ", match.Indicator.Function)
 		fmt.Println("Route", match.RouteString)
