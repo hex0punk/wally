@@ -58,9 +58,9 @@ func (fi *FuncInfo) Match(indicators []RouteIndicator) *RouteIndicator {
 		if fi.Name != ind.Function {
 			continue
 		}
-		if fi.Type != "" && fi.Type != ind.Type {
-			continue
-		}
+		//if fi.Type != "" && fi.Type != ind.Type {
+		//	continue
+		//}
 		match = &ind
 	}
 	return match
