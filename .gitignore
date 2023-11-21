@@ -17,3 +17,5 @@ core
 _cgo_*/
 
 go.work
+
+.idea/
