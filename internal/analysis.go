@@ -76,6 +76,20 @@ func InitIndicators() []RouteIndicator {
 			RouteParamName: "method",
 			RouteParamPos:  0,
 		},
+		{
+			Package:        "fs/services/webber/frontend",
+			Type:           "",
+			Function:       "Register",
+			RouteParamName: "pattern",
+			RouteParamPos:  1,
+		},
+		{
+			Package:        "fs/skeleton",
+			Type:           "",
+			Function:       "RegisterAuthedHttpHandler",
+			RouteParamName: "pattern",
+			RouteParamPos:  1,
+		},
 	}
 }
 
@@ -138,8 +152,8 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 				routeOrMethod = n.ResolveParamFromName(res.RouteParamName, sig, ce, pkg.TypesInfo)
 			}
 		} else {
-			//routeOrMethod = n.ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
-			routeOrMethod = ""
+			routeOrMethod = n.ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
+			//routeOrMethod = ""
 		}
 
 		pos := pkg.Fset.Position(funExpr.Pos())
@@ -249,7 +263,26 @@ func (n *Navigator) GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Si
 	if f, ok := o1.(*types.Func); ok {
 		return f.Type().(*types.Signature), nil
 	}
-	n.Logger.Debug("Could not get signature")
+
+	if v, ok := o1.(*types.Var); ok {
+		return v.Type().(*types.Signature), nil
+	}
+
+	//sig := expr.Type().(*types.Signature)
+
+	//switch va := o1.(type) {
+	//case *types.Func:
+	//	fmt.Println("func ", va.Name())
+	//case *types.Const:
+	//	fmt.Println("const ", va.Name())
+	//case *types.Var:
+	//	fmt.Println("var ", va.Type().(*types.Signature))
+	//case *types.Builtin:
+	//	fmt.Println("builtin ", va.Name())
+	//default:
+	//	fmt.Println("DEFAULT", va.String())
+	//}
+	//n.Logger.Debug("Could not get signature")
 	return nil, errors.New("Unable to get signature")
 }
 
