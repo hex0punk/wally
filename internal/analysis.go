@@ -129,7 +129,6 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 
 		// Now try to get the method value
 		// TODO: move this to a dedicated function, or as part of GetFuncInfo
-    // Also, there is too much code repetition here
 		sel, ok := funExpr.(*ast.SelectorExpr)
 		routeOrMethod := ""
 		if ok {
@@ -155,7 +154,18 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 	})
 }
 
-func (n *Navigator) ResolveParam(pos int, param *ast.CallExpr, info *types.Info) string {
+func (n *Navigator) ResolveParamFromName(name string, sig *types.Signature, param *ast.CallExpr, info *types.Info) string {
+	// First get the pos for the arg
+	pos, err := n.GetParamPos(sig, info, name)
+	if err != nil {
+		// we failed at getting param, return an empty string and be sad (for now)
+		return ""
+	}
+
+	return n.ResolveParamFromPos(pos, param, info)
+}
+
+func (n *Navigator) ResolveParamFromPos(pos int, param *ast.CallExpr, info *types.Info) string {
 	// First get the pos for the arg
 	//pos, err := n.GetParamPos(sig, info, name)
 	//if err != nil {
