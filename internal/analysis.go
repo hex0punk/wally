@@ -129,18 +129,8 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 			return true
 		}
 
-		sel, _ := funExpr.(*ast.SelectorExpr)
-		routeOrMethod := ""
-		if sel != nil {
-			sig, err := n.GetFuncSignature(sel.Sel, pkg.TypesInfo)
-			if err == nil {
-				fmt.Println("found sig", sig, sig.String())
-				routeOrMethod = n.ResolveParamFromName(res.RouteParamName, sig, ce, pkg.TypesInfo)
-			}
-		} else {
-			//routeOrMethod = n.ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
-			routeOrMethod = ""
-		}
+		// Now get the route
+		routeOrMethod := n.ResolveParam(res.RouteParamPos, ce, pkg.TypesInfo)
 
 		pos := pkg.Fset.Position(funExpr.Pos())
 		match := RouteMatch{
@@ -154,18 +144,7 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 	})
 }
 
-func (n *Navigator) ResolveParamFromName(name string, sig *types.Signature, param *ast.CallExpr, info *types.Info) string {
-	// First get the pos for the arg
-	pos, err := n.GetParamPos(sig, info, name)
-	if err != nil {
-		// we failed at getting param, return an empty string and be sad (for now)
-		return ""
-	}
-
-	return n.ResolveParamFromPos(pos, param, info)
-}
-
-func (n *Navigator) ResolveParamFromPos(pos int, param *ast.CallExpr, info *types.Info) string {
+func (n *Navigator) ResolveParam(pos int, param *ast.CallExpr, info *types.Info) string {
 	// First get the pos for the arg
 	//pos, err := n.GetParamPos(sig, info, name)
 	//if err != nil {
