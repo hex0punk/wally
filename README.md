@@ -4,9 +4,9 @@
 
 Static analysis tool for detecting and mapping RPC and HTTP routes.
 
-## Why is it call wally?
+## Why is it called wally?
 
-Because [Wally](https://monkeyisland.fandom.com/wiki/Wally_B._Feed) is a catographer
+Because [Wally](https://monkeyisland.fandom.com/wiki/Wally_B._Feed) is a catographer, I like Monkey Island, and I wanted it to be called that :).
 
 ## How can I play with it?
 
