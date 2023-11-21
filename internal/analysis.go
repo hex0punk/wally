@@ -129,6 +129,7 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 
 		// Now try to get the method value
 		// TODO: move this to a dedicated function, or as part of GetFuncInfo
+		// Also, there is too much code repetition here
 		sel, ok := funExpr.(*ast.SelectorExpr)
 		routeOrMethod := ""
 		if ok {
