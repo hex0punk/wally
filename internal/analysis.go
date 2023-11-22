@@ -40,7 +40,7 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 		ind := ind
 		// User may decide they do not care if the package matches.
 		// It'd be worth adding a command to "take a guess" for potential routes
-		if fi.Package != "*" && fi.Package != ind.Package {
+		if fi.Package != "*" || fi.Package != ind.Package {
 			continue
 		}
 		if fi.Name != ind.Function {

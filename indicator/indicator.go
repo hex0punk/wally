@@ -44,5 +44,18 @@ func InitIndicators() []Indicator {
 			Function:      "RPC",
 			RouteParamPos: 0,
 		},
+		//{
+		//	Package:        "fs/services/webber/frontend",
+		//	Type:           "",
+		//	Function:       "Register",
+		//	RouteParamName: "pattern",
+		//	RouteParamPos:  1,
+		//},
+		{
+			Package:        "*",
+			Type:           "",
+			Function:       "Register",
+			RouteParamName: "pattern",
+		},
 	}
 }
