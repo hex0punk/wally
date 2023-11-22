@@ -116,7 +116,7 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 
 		// We have a function if we have made it here
 		funExpr := ce.Fun
-		funcInfo, err := n.GetFuncInfo(funExpr, pkg.TypesInfo)
+		funcInfo, err := GetFuncInfo(funExpr, pkg.TypesInfo)
 		if err != nil {
 			return true
 		}
@@ -133,14 +133,14 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 		sel, ok := funExpr.(*ast.SelectorExpr)
 		routeOrMethod := ""
 		if ok {
-			sig, err := n.GetFuncSignature(sel.Sel, pkg.TypesInfo)
+			sig, err := GetFuncSignature(sel.Sel, pkg.TypesInfo)
 			if err != nil {
-				routeOrMethod = n.ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
+				routeOrMethod = ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
 			} else {
-				routeOrMethod = n.ResolveParamFromName(res.RouteParamName, sig, ce, pkg.TypesInfo)
+				routeOrMethod = ResolveParamFromName(res.RouteParamName, sig, ce, pkg.TypesInfo)
 			}
 		} else {
-			routeOrMethod = n.ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
+			routeOrMethod = ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
 		}
 
 		pos := pkg.Fset.Position(funExpr.Pos())
@@ -155,73 +155,54 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 	})
 }
 
-func (n *Navigator) ResolveParamFromName(name string, sig *types.Signature, param *ast.CallExpr, info *types.Info) string {
+func ResolveParamFromName(name string, sig *types.Signature, param *ast.CallExpr, info *types.Info) string {
 	// First get the pos for the arg
-	pos, err := n.GetParamPos(sig, info, name)
+	pos, err := GetParamPos(sig, name)
 	if err != nil {
 		// we failed at getting param, return an empty string and be sad (for now)
 		return ""
 	}
 
-	return n.ResolveParamFromPos(pos, param, info)
+	return ResolveParamFromPos(pos, param, info)
 }
 
-func (n *Navigator) ResolveParamFromPos(pos int, param *ast.CallExpr, info *types.Info) string {
-	// First get the pos for the arg
-	//pos, err := n.GetParamPos(sig, info, name)
-	//if err != nil {
-	//	// we failed at getting param, return an empty string and be sad (for now)
-	//	return ""
-	//}
+func ResolveParamFromPos(pos int, param *ast.CallExpr, info *types.Info) string {
 	if param.Args != nil && len(param.Args) > 0 {
-		argMethod := param.Args[pos]
+		arg := param.Args[pos]
+		return GetValueFromExp(arg, info)
+	}
+	return ""
+}
 
-		// This is not enough if the value is a variable to a constant
-		if _, ok := argMethod.(*ast.BasicLit); ok {
-			return argMethod.(*ast.BasicLit).Value
-		}
-
+func GetValueFromExp(exp ast.Expr, info *types.Info) string {
+	switch node := exp.(type) {
+	case *ast.BasicLit: // i.e. "/thepath"
+		return node.Value
+	case *ast.SelectorExpr: // i.e. "paths.User" where User is a constant
 		// If its a constant its a selector and we can extract the value below
-		if se, ok := argMethod.(*ast.SelectorExpr); ok {
-			o1 := info.ObjectOf(se.Sel)
-			// TODO: Write a func for this
-			if con, ok := o1.(*types.Const); ok {
-				return con.Val().String()
-			}
+		o1 := info.ObjectOf(node.Sel)
+		// TODO: Write a func for this
+		if con, ok := o1.(*types.Const); ok {
+			return con.Val().String()
 		}
-		if se, ok := argMethod.(*ast.Ident); ok {
-			o1 := info.ObjectOf(se)
-			// TODO: Write a func for this
-			if con, ok := o1.(*types.Const); ok {
-				return con.Val().String()
-			}
+	case *ast.Ident: // i.e. user where user is a const
+		o1 := info.ObjectOf(node)
+		// TODO: Write a func for this
+		if con, ok := o1.(*types.Const); ok {
+			return con.Val().String()
 		}
-		if be, ok := argMethod.(*ast.BinaryExpr); ok {
-			left := "BINEXPX"
-			right := "BINEXPY"
-			switch n := be.X.(type) {
-			case *ast.BasicLit:
-				left = n.Value
-			case *ast.Ident:
-				o1 := info.ObjectOf(n)
-				// TODO: Write a func for this
-				if con, ok := o1.(*types.Const); ok {
-					left = con.Val().String()
-				}
-			}
-			switch n := be.Y.(type) {
-			case *ast.BasicLit:
-				right = n.Value
-			case *ast.Ident:
-				o1 := info.ObjectOf(n)
-				// TODO: Write a func for this
-				if con, ok := o1.(*types.Const); ok {
-					right = con.Val().String()
-				}
-			}
-			// We assume the operator (be.Op) is +, because why would it be anything else
-			return left + right
+	case *ast.BinaryExpr: // i.e. base+"/getUser"
+		left := GetValueFromExp(node, info)
+		right := GetValueFromExp(node, info)
+		if left == "" {
+			left = "<BinExp.X>"
 		}
+		if right == "" {
+			right = "<BinExp.Y>"
+		}
+		// We assume the operator (be.Op) is +, because why would it be anything else
+		// for a func param
+		return left + right
 	}
 	return ""
 }
@@ -241,18 +222,18 @@ func GetName(e ast.Expr) string {
 	}
 }
 
-func (n *Navigator) GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
+func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 	sel, ok := expr.(*ast.SelectorExpr)
 	if !ok {
 		return nil, errors.New("unable to get func data")
 	}
 
 	funcName := GetName(sel.Sel)
-	pkgPath, err := n.ResolvePackageFromIdent(sel.Sel, info)
+	pkgPath, err := ResolvePackageFromIdent(sel.Sel, info)
 	if err != nil && funcName != "" {
 		// Try to get pkg name from the selector, as hti si likely not a pkg.func
 		// but a struct.fun
-		pkgPath, err = n.ResolvePackageFromIdent(sel.X, info)
+		pkgPath, err = ResolvePackageFromIdent(sel.X, info)
 		if err != nil {
 			return nil, err
 		}
@@ -265,7 +246,7 @@ func (n *Navigator) GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, err
 	}, nil
 }
 
-func (n *Navigator) GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Signature, error) {
+func GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Signature, error) {
 	idt, ok := expr.(*ast.Ident)
 	if !ok {
 		return nil, errors.New("not an ident for expr")
@@ -285,7 +266,7 @@ func (n *Navigator) GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Si
 
 // ResolvePackageFromIdent TODO: This may be useful to get receiver type of func
 // Also, wrong name, its from an Expr, not from Idt, technically
-func (n *Navigator) ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (string, error) {
+func ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (string, error) {
 	idt, ok := expr.(*ast.Ident)
 	if !ok {
 		return "", errors.New("not an ident")
@@ -301,7 +282,7 @@ func (n *Navigator) ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (st
 	return "", errors.New(errStr)
 }
 
-func (n *Navigator) GetParamPos(sig *types.Signature, info *types.Info, paramName string) (int, error) {
+func GetParamPos(sig *types.Signature, paramName string) (int, error) {
 	numParams := sig.Params().Len()
 	for i := 0; i <= numParams; i++ {
 		param := sig.Params().At(i)
