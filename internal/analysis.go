@@ -196,6 +196,32 @@ func (n *Navigator) ResolveParamFromPos(pos int, param *ast.CallExpr, info *type
 				return con.Val().String()
 			}
 		}
+		if be, ok := argMethod.(*ast.BinaryExpr); ok {
+			left := "BINEXPX"
+			right := "BINEXPY"
+			switch n := be.X.(type) {
+			case *ast.BasicLit:
+				left = n.Value
+			case *ast.Ident:
+				o1 := info.ObjectOf(n)
+				// TODO: Write a func for this
+				if con, ok := o1.(*types.Const); ok {
+					left = con.Val().String()
+				}
+			}
+			switch n := be.Y.(type) {
+			case *ast.BasicLit:
+				right = n.Value
+			case *ast.Ident:
+				o1 := info.ObjectOf(n)
+				// TODO: Write a func for this
+				if con, ok := o1.(*types.Const); ok {
+					right = con.Val().String()
+				}
+			}
+			// We assume the operator (be.Op) is +, because why would it be anything else
+			return left + right
+		}
 	}
 	return ""
 }
