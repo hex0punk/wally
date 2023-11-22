@@ -22,9 +22,10 @@ type FuncInfo struct {
 }
 
 type RouteMatch struct {
-	Indicator   indicator.Indicator
+	Indicator   indicator.Indicator // It should be FuncInfo instead
 	RouteString string
 	Pos         token.Position
+	Signature   *types.Signature
 }
 
 type Navigator struct {
@@ -37,7 +38,9 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 	var match *indicator.Indicator
 	for _, ind := range indicators {
 		ind := ind
-		if fi.Package != ind.Package {
+		// User may decide they do not care if the package matches.
+		// It'd be worth adding a command to "take a guess" for potential routes
+		if fi.Package != "*" && fi.Package != ind.Package {
 			continue
 		}
 		if fi.Name != ind.Function {
