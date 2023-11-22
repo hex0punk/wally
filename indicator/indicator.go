@@ -38,5 +38,11 @@ func InitIndicators() []Indicator {
 			RouteParamName: "pattern",
 			//RouteParamPos:  0,
 		},
+		{
+			Package:       "github.com/hashicorp/nomad/command/agent",
+			Type:          "",
+			Function:      "RPC",
+			RouteParamPos: 0,
+		},
 	}
 }
