@@ -10,13 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-)
-
-type IndicatorType int
-
-const (
-	SERVICE IndicatorType = iota
-	CALLER
+	"wally/indicator"
 )
 
 type FuncInfo struct {
@@ -27,29 +21,20 @@ type FuncInfo struct {
 	Signature *types.Signature
 }
 
-type RouteIndicator struct {
-	Package        string
-	Type           string
-	Function       string
-	RouteParamPos  int
-	RouteParamName string
-	IndicatorType  IndicatorType
-}
-
 type RouteMatch struct {
-	Indicator   RouteIndicator
+	Indicator   indicator.Indicator
 	RouteString string
 	Pos         token.Position
 }
 
 type Navigator struct {
 	Logger          *slog.Logger
-	RouteIndicators []RouteIndicator
+	RouteIndicators []indicator.Indicator
 	RouteMatches    []RouteMatch
 }
 
-func (fi *FuncInfo) Match(indicators []RouteIndicator) *RouteIndicator {
-	var match *RouteIndicator
+func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
+	var match *indicator.Indicator
 	for _, ind := range indicators {
 		ind := ind
 		if fi.Package != ind.Package {
@@ -66,19 +51,7 @@ func (fi *FuncInfo) Match(indicators []RouteIndicator) *RouteIndicator {
 	return match
 }
 
-func InitIndicators() []RouteIndicator {
-	return []RouteIndicator{
-		{
-			Package:        "github.com/hashicorp/nomad/nomad",
-			Type:           "",
-			Function:       "forward",
-			RouteParamName: "method",
-			RouteParamPos:  0,
-		},
-	}
-}
-
-func NewNavigator(logLevel int, indicators []RouteIndicator) *Navigator {
+func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
 	return &Navigator{
 		Logger:          NewLogger(logLevel),
 		RouteIndicators: indicators,
@@ -95,7 +68,7 @@ func (n *Navigator) MapRoutes() {
 	}
 }
 
-func PackageMatches(pkgStr string, indicators []RouteIndicator) bool {
+func PackageMatches(pkgStr string, indicators []indicator.Indicator) bool {
 	pkgStr = strings.Trim(pkgStr, "\"")
 	for _, indicator := range indicators {
 		if pkgStr == indicator.Package {
