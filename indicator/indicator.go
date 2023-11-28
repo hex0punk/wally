@@ -3,8 +3,15 @@ package indicator
 type IndicatorType int
 
 const (
-	SERVICE IndicatorType = iota
-	CALLER
+	Service IndicatorType = iota
+	Caller
+)
+
+type ParamType int
+
+const (
+	HTTPMethod ParamType = iota
+	Path
 )
 
 type Indicator struct {
@@ -25,30 +32,37 @@ type RouteParam struct {
 func InitIndicators() []Indicator {
 	return []Indicator{
 		{
-			Package:        "github.com/hashicorp/nomad/nomad",
-			Type:           "",
-			Function:       "forward",
-			RouteParamName: "method",
-			//RouteParamPos:  0,
+			Package:  "github.com/hashicorp/nomad/nomad",
+			Type:     "",
+			Function: "forward",
+			Params: []RouteParam{
+				{Name: "method"},
+			},
+			IndicatorType: Caller,
 		},
 		{
-			Package:        "net/http",
-			Type:           "",
-			Function:       "Handle",
-			RouteParamName: "pattern",
-			//RouteParamPos:  0,
+			Package:  "net/http",
+			Type:     "",
+			Function: "Handle",
+			Params: []RouteParam{
+				{Name: "pattern"},
+			},
+			IndicatorType: Service,
 		},
 		{
-			Package:       "github.com/hashicorp/nomad/command/agent",
-			Type:          "",
-			Function:      "RPC",
-			RouteParamPos: 0,
+			Package:  "github.com/hashicorp/nomad/command/agent",
+			Type:     "",
+			Function: "RPC",
+			Params: []RouteParam{
+				{Pos: 0},
+			},
+			IndicatorType: Caller,
 		},
-		{
-			Package:        "*",
-			Type:           "",
-			Function:       "Register",
-			RouteParamName: "pattern",
-		},
+		//{
+		//	Package:        "*",
+		//	Type:           "",
+		//	Function:       "Register",
+		//	RouteParamName: "pattern",
+		//},
 	}
 }

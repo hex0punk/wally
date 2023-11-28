@@ -174,7 +174,7 @@ func GetValueFromExp(exp ast.Expr, info *types.Info) string {
 		if con, ok := o1.(*types.Var); ok {
 			// A non-constant value, best effort (without ssa analysis) is to
 			// return the variable name
-			return fmt.Sprintf("<var %s>" + con.Id())
+			return fmt.Sprintf("<var %s.%s>", GetName(node.X), con.Id())
 		}
 	case *ast.Ident: // i.e. user where user is a const
 		fmt.Println("FOUND A IDENT")
