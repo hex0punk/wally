@@ -6,11 +6,11 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"wally/indicator"
-	"wally/internal"
+	"wally/navigator"
 )
 
 var (
-	pkg string
+	path string
 )
 
 // mapCmd represents the map command
@@ -27,12 +27,12 @@ var mapCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(mapCmd)
-	mapCmd.PersistentFlags().StringVarP(&pkg, "path", "p", "", "The package to target")
+	mapCmd.PersistentFlags().StringVarP(&path, "path", "p", "", "The package to target")
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators()
-	navigator := internal.NewNavigator(verbose, indicators)
-	navigator.MapRoutes()
+	navigator := navigator.NewNavigator(verbose, indicators)
+	navigator.MapRoutes(path)
 	navigator.PrintResults()
 }
