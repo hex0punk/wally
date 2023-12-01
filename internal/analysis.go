@@ -104,6 +104,8 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.CallExpr)(nil),
 	}
 
+	results := []RouteMatch{}
+
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
@@ -137,10 +139,10 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Now try to get the params for methods, path, etc.
 		match.Params = ResolveParams(route.Params, sig, ce, pass.TypesInfo)
 		fmt.Println("match found ", match.Indicator.Function)
-		n.RouteMatches = append(n.RouteMatches, match)
+		results = append(results, match)
 	})
 
-	return n.RouteMatches, nil
+	return results, nil
 }
 
 func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {

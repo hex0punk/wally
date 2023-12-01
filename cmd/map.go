@@ -92,9 +92,10 @@ func WithAnalyzer() {
 			//fmt.Println("printing results")
 			if passIssues, ok := result.([]internal.RouteMatch); ok {
 				for _, iss := range passIssues {
-					internal.PrintMach(iss)
+					navigator.RouteMatches = append(navigator.RouteMatches, iss)
 				}
 			}
 		}
 	}
+	navigator.PrintResults()
 }
