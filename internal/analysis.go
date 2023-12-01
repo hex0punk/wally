@@ -6,6 +6,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"log/slog"
 	"os"
@@ -33,6 +36,19 @@ type Navigator struct {
 	RouteIndicators []indicator.Indicator
 	RouteMatches    []RouteMatch
 }
+
+//type analyzerRunner struct {
+//	pkg *loader.Package
+//	// object facts of our dependencies; may contain facts of
+//	// analyzers other than the current one
+//	depObjFacts map[objectFactKey]objectFact
+//	// package facts of our dependencies; may contain facts of
+//	// analyzers other than the current one
+//	depPkgFacts map[packageFactKey]analysis.Fact
+//	factsOnly   bool
+//
+//	stats *Stats
+//}
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
 	var match *indicator.Indicator
@@ -79,6 +95,52 @@ func PackageMatches(pkgStr string, indicators []indicator.Indicator) bool {
 		}
 	}
 	return false
+}
+
+func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
+	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+
+	nodeFilter := []ast.Node{
+		(*ast.CallExpr)(nil),
+	}
+
+	// this is basically the same as ast.Inspect(), only we don't return a
+	// boolean anymore as it'll visit all the nodes based on the filter.
+	inspecting.Preorder(nodeFilter, func(node ast.Node) {
+		ce := node.(*ast.CallExpr)
+		// We have a function if we have made it here
+		funExpr := ce.Fun
+		funcInfo, err := GetFuncInfo(funExpr, pass.TypesInfo)
+		if err != nil {
+			return
+		}
+
+		route := funcInfo.Match(n.RouteIndicators)
+		if route == nil {
+			// Don't keep going deeper in the node if there are no matches by now?
+			return
+		}
+
+		// Get the position of the function in code
+		pos := pass.Fset.Position(funExpr.Pos())
+
+		// Whether we are able to get params or not we have a match
+		match := RouteMatch{
+			Indicator: *route,
+			Pos:       pos,
+		}
+
+		sel, _ := funExpr.(*ast.SelectorExpr)
+
+		sig, _ := GetFuncSignature(sel.Sel, pass.TypesInfo)
+		n.Logger.Debug("Checking for pos", "pos", pos.String())
+		// Now try to get the params for methods, path, etc.
+		match.Params = ResolveParams(route.Params, sig, ce, pass.TypesInfo)
+		fmt.Println("match found ", match.Indicator.Function)
+		n.RouteMatches = append(n.RouteMatches, match)
+	})
+
+	return n.RouteMatches, nil
 }
 
 func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
@@ -315,6 +377,22 @@ func (n *Navigator) PrintResults() {
 		fmt.Println()
 	}
 	fmt.Println("Total Results: ", len(n.RouteMatches))
+}
+
+func PrintMach(match RouteMatch) {
+	fmt.Println("===========MATCH===============")
+	fmt.Println("Package: ", match.Indicator.Package)
+	fmt.Println("Function: ", match.Indicator.Function)
+	fmt.Println("Params: ")
+	for k, v := range match.Params {
+		if v == "" {
+			fmt.Printf("	%s: %s\n", k, "<could not resolve>")
+		} else {
+			fmt.Printf("	%s: %s\n", k, v)
+		}
+	}
+	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
+	fmt.Println()
 }
 
 func NewLogger(level int) *slog.Logger {
