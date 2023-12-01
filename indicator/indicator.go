@@ -41,15 +41,6 @@ func InitIndicators() []Indicator {
 			IndicatorType: Caller,
 		},
 		{
-			Package:  "net/http",
-			Type:     "",
-			Function: "Handle",
-			Params: []RouteParam{
-				{Name: "pattern"},
-			},
-			IndicatorType: Service,
-		},
-		{
 			Package:  "github.com/hashicorp/nomad/command/agent",
 			Type:     "",
 			Function: "RPC",
@@ -57,6 +48,15 @@ func InitIndicators() []Indicator {
 				{Pos: 0},
 			},
 			IndicatorType: Caller,
+		},
+		{
+			Package:  "net/http",
+			Type:     "",
+			Function: "Handle",
+			Params: []RouteParam{
+				{Name: "pattern"},
+			},
+			IndicatorType: Service,
 		},
 		//{
 		//	Package:        "*",
