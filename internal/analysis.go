@@ -10,13 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-)
-
-type IndicatorType int
-
-const (
-	SERVICE IndicatorType = iota
-	CALLER
+	"wally/indicator"
 )
 
 type FuncInfo struct {
@@ -27,32 +21,26 @@ type FuncInfo struct {
 	Signature *types.Signature
 }
 
-type RouteIndicator struct {
-	Package        string
-	Type           string
-	Function       string
-	RouteParamPos  int
-	RouteParamName string
-	IndicatorType  IndicatorType
-}
-
 type RouteMatch struct {
-	Indicator   RouteIndicator
-	RouteString string
-	Pos         token.Position
+	Indicator indicator.Indicator // It should be FuncInfo instead
+	Params    map[string]string
+	Pos       token.Position
+	Signature *types.Signature
 }
 
 type Navigator struct {
 	Logger          *slog.Logger
-	RouteIndicators []RouteIndicator
+	RouteIndicators []indicator.Indicator
 	RouteMatches    []RouteMatch
 }
 
-func (fi *FuncInfo) Match(indicators []RouteIndicator) *RouteIndicator {
-	var match *RouteIndicator
+func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
+	var match *indicator.Indicator
 	for _, ind := range indicators {
 		ind := ind
-		if fi.Package != ind.Package {
+		// User may decide they do not care if the package matches.
+		// It'd be worth adding a command to "take a guess" for potential routes
+		if fi.Package != ind.Package && ind.Package != "*" {
 			continue
 		}
 		if fi.Name != ind.Function {
@@ -66,19 +54,7 @@ func (fi *FuncInfo) Match(indicators []RouteIndicator) *RouteIndicator {
 	return match
 }
 
-func InitIndicators() []RouteIndicator {
-	return []RouteIndicator{
-		{
-			Package:        "github.com/hashicorp/nomad/nomad",
-			Type:           "",
-			Function:       "forward",
-			RouteParamName: "method",
-			RouteParamPos:  0,
-		},
-	}
-}
-
-func NewNavigator(logLevel int, indicators []RouteIndicator) *Navigator {
+func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
 	return &Navigator{
 		Logger:          NewLogger(logLevel),
 		RouteIndicators: indicators,
@@ -95,7 +71,7 @@ func (n *Navigator) MapRoutes() {
 	}
 }
 
-func PackageMatches(pkgStr string, indicators []RouteIndicator) bool {
+func PackageMatches(pkgStr string, indicators []indicator.Indicator) bool {
 	pkgStr = strings.Trim(pkgStr, "\"")
 	for _, indicator := range indicators {
 		if pkgStr == indicator.Package {
@@ -121,38 +97,46 @@ func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
 			return true
 		}
 
-		res := funcInfo.Match(n.RouteIndicators)
-		if res == nil {
+		route := funcInfo.Match(n.RouteIndicators)
+		if route == nil {
 			// Don't keep going deeper in the node if there are no matches by now?
 			return true
 		}
 
-		// Now try to get the method value
-		// TODO: move this to a dedicated function, or as part of GetFuncInfo
-		// Also, there is too much code repetition here
-		sel, ok := funExpr.(*ast.SelectorExpr)
-		routeOrMethod := ""
-		if ok {
-			sig, err := GetFuncSignature(sel.Sel, pkg.TypesInfo)
-			if err != nil {
-				routeOrMethod = ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
-			} else {
-				routeOrMethod = ResolveParamFromName(res.RouteParamName, sig, ce, pkg.TypesInfo)
-			}
-		} else {
-			routeOrMethod = ResolveParamFromPos(res.RouteParamPos, ce, pkg.TypesInfo)
+		// Get the position of the function in code
+		pos := pkg.Fset.Position(funExpr.Pos())
+
+		// Whether we are able to get params or not we have a match
+		match := RouteMatch{
+			Indicator: *route,
+			Pos:       pos,
 		}
 
-		pos := pkg.Fset.Position(funExpr.Pos())
-		match := RouteMatch{
-			Indicator:   *res,
-			RouteString: routeOrMethod,
-			Pos:         pos,
-		}
+		sel, ok := funExpr.(*ast.SelectorExpr)
+
+		sig, _ := GetFuncSignature(sel.Sel, pkg.TypesInfo)
+		n.Logger.Debug("Checking for pos", "pos", pos.String())
+		// Now try to get the params for methods, path, etc.
+		match.Params = ResolveParams(route.Params, sig, ce, pkg.TypesInfo)
 
 		n.RouteMatches = append(n.RouteMatches, match)
+
 		return true
 	})
+}
+
+func ResolveParams(params []indicator.RouteParam, sig *types.Signature, ce *ast.CallExpr, info *types.Info) map[string]string {
+	resolvedParams := make(map[string]string)
+	for _, param := range params {
+		val := ""
+		if param.Name != "" && sig != nil {
+			val = ResolveParamFromName(param.Name, sig, ce, info)
+		} else {
+			val = ResolveParamFromPos(param.Pos, ce, info)
+		}
+		resolvedParams[param.Name] = val
+	}
+	return resolvedParams
 }
 
 func ResolveParamFromName(name string, sig *types.Signature, param *ast.CallExpr, info *types.Info) string {
@@ -177,23 +161,40 @@ func ResolveParamFromPos(pos int, param *ast.CallExpr, info *types.Info) string 
 func GetValueFromExp(exp ast.Expr, info *types.Info) string {
 	switch node := exp.(type) {
 	case *ast.BasicLit: // i.e. "/thepath"
+		fmt.Println("FOUND A BASICLIT")
 		return node.Value
 	case *ast.SelectorExpr: // i.e. "paths.User" where User is a constant
 		// If its a constant its a selector and we can extract the value below
+		fmt.Println("FOUND A SELEC")
 		o1 := info.ObjectOf(node.Sel)
 		// TODO: Write a func for this
 		if con, ok := o1.(*types.Const); ok {
 			return con.Val().String()
 		}
+		if con, ok := o1.(*types.Var); ok {
+			// A non-constant value, best effort (without ssa analysis) is to
+			// return the variable name
+			return fmt.Sprintf("<var %s.%s>", GetName(node.X), con.Id())
+		}
 	case *ast.Ident: // i.e. user where user is a const
+		fmt.Println("FOUND A IDENT")
 		o1 := info.ObjectOf(node)
 		// TODO: Write a func for this
 		if con, ok := o1.(*types.Const); ok {
 			return con.Val().String()
 		}
+	case *ast.CompositeLit: // i.e. []string{"POST"}
+		fmt.Println("FOUND A COMPOSITE")
+		vals := ""
+		for _, lit := range node.Elts {
+			val := GetValueFromExp(lit, info)
+			vals = vals + " " + val
+		}
+		return vals
 	case *ast.BinaryExpr: // i.e. base+"/getUser"
-		left := GetValueFromExp(node, info)
-		right := GetValueFromExp(node, info)
+		fmt.Println("FOUND A BIN")
+		left := GetValueFromExp(node.X, info)
+		right := GetValueFromExp(node.Y, info)
 		if left == "" {
 			left = "<BinExp.X>"
 		}
@@ -204,6 +205,7 @@ func GetValueFromExp(exp ast.Expr, info *types.Info) string {
 		// for a func param
 		return left + right
 	}
+	fmt.Println("FOUND A NOTHING")
 	return ""
 }
 
@@ -284,7 +286,7 @@ func ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (string, error) {
 
 func GetParamPos(sig *types.Signature, paramName string) (int, error) {
 	numParams := sig.Params().Len()
-	for i := 0; i <= numParams; i++ {
+	for i := 0; i < numParams; i++ {
 		param := sig.Params().At(i)
 		if param.Name() == paramName {
 			return i, nil
@@ -301,7 +303,14 @@ func (n *Navigator) PrintResults() {
 		fmt.Println("===========MATCH===============")
 		fmt.Println("Package: ", match.Indicator.Package)
 		fmt.Println("Function: ", match.Indicator.Function)
-		fmt.Println("Route", match.RouteString)
+		fmt.Println("Params: ")
+		for k, v := range match.Params {
+			if v == "" {
+				fmt.Printf("	%s: %s\n", k, "<could not resolve>")
+			} else {
+				fmt.Printf("	%s: %s\n", k, v)
+			}
+		}
 		fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 		fmt.Println()
 	}

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"wally/indicator"
 	"wally/internal"
 )
 
@@ -30,7 +31,7 @@ func init() {
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
-	indicators := internal.InitIndicators()
+	indicators := indicator.InitIndicators()
 	navigator := internal.NewNavigator(verbose, indicators)
 	navigator.MapRoutes()
 	navigator.PrintResults()
