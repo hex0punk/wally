@@ -15,13 +15,11 @@ const (
 )
 
 type Indicator struct {
-	Package        string
-	Type           string
-	Function       string
-	Params         []RouteParam
-	RouteParamPos  int
-	RouteParamName string
-	IndicatorType  IndicatorType
+	Package       string
+	Type          string
+	Function      string
+	Params        []RouteParam
+	IndicatorType IndicatorType
 }
 
 type RouteParam struct {

@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"log/slog"
 	"os"
+	"wally/checker"
 	"wally/indicator"
 	"wally/logger"
 	"wally/reporter"
@@ -43,11 +45,12 @@ func (n *Navigator) MapRoutes(path string) {
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 	}
 
+	checker := checker.InitChecker(analyzer)
+	// TODO: consider this as part of a checker instead
 	results := map[*analysis.Analyzer]interface{}{}
-
 	for _, pkg := range pkgs {
 		pass := &analysis.Pass{
-			Analyzer:          analyzer,
+			Analyzer:          checker.Analyzer,
 			Fset:              pkg.Fset,
 			Files:             pkg.Syntax,
 			OtherFiles:        pkg.OtherFiles,
@@ -57,8 +60,8 @@ func (n *Navigator) MapRoutes(path string) {
 			TypesSizes:        pkg.TypesSizes,
 			ResultOf:          results,
 			Report:            func(d analysis.Diagnostic) {},
-			ImportObjectFact:  nil,
-			ExportObjectFact:  nil,
+			ImportObjectFact:  checker.ImportObjectFact,
+			ExportObjectFact:  checker.ExportObjectFact,
 			ImportPackageFact: nil,
 			ExportPackageFact: nil,
 			AllObjectFacts:    nil,
@@ -75,7 +78,7 @@ func (n *Navigator) MapRoutes(path string) {
 
 		result, err := pass.Analyzer.Run(pass)
 		if err != nil {
-			n.Logger.Warn("Error running analyzer %s: %s\n", analyzer.Name, err)
+			n.Logger.Warn("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
 			continue
 		}
 		// This should be placed outside of this loop
@@ -115,6 +118,9 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
+		//(*ast.DeclStmt)(nil),
+		(*ast.GenDecl)(nil),
+		(*ast.AssignStmt)(nil),
 	}
 
 	results := []wallylib.RouteMatch{}
@@ -122,7 +128,64 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
-		ce := node.(*ast.CallExpr)
+
+		if de, ok := node.(*ast.AssignStmt); ok {
+			for _, exp := range de.Rhs {
+				if id, ok := exp.(*ast.Ident); ok {
+					res := wallylib.GetValueFromExp(id, pass)
+					if res != "" {
+						fmt.Println("HOLYCRAP ", res)
+					}
+				}
+			}
+			//if v.Tok != token.DEFINE {
+			//	return
+			//}
+			//for _, exp := range v.Lhs {
+			//	if id, ok := exp.(*ast.Ident); ok {
+			//		check(id, "var", initialisms)
+			//	}
+			//}
+		}
+		if gen, ok := node.(*ast.GenDecl); ok {
+			for _, spec := range gen.Specs {
+				switch s := spec.(type) {
+				case *ast.ValueSpec:
+					for k, id := range s.Values {
+						res := wallylib.GetValueFromExp(id, pass)
+						if res != "" {
+							fmt.Println("FOUND SOMETHING! ", res, s.Names[k].Name)
+
+							o1 := pass.TypesInfo.ObjectOf(s.Names[k])
+							switch tt := o1.(type) {
+							case *types.Var:
+								fmt.Println("is a Var ", res, tt.Name())
+								if tt.Parent() == tt.Pkg().Scope() {
+									// Scope level
+									fmt.Println("==================wowavar==================")
+									//fmt.Println("is a pkg scope ", res, tt.Name())
+									fmt.Println("wowavar Val", res)
+									fmt.Println("wowavar name", s.Names[k].Name)
+									fmt.Println("wowavar tt name", tt.Name())
+
+									gv := new(checker.GlobalVar)
+									gv.Val = res
+									pass.ExportObjectFact(o1, gv)
+								}
+							case *types.Const:
+								fmt.Println("is a Const ", res, tt.Name())
+							}
+							//fmt.Println("OFID ", s.Names[k].Name)
+						}
+					}
+				}
+			}
+		}
+
+		ce, ok := node.(*ast.CallExpr)
+		if !ok {
+			return
+		}
 		// We have a function if we have made it here
 		funExpr := ce.Fun
 		funcInfo, err := wallylib.GetFuncInfo(funExpr, pass.TypesInfo)
@@ -150,7 +213,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		sig, _ := wallylib.GetFuncSignature(sel.Sel, pass.TypesInfo)
 		n.Logger.Debug("Checking for pos", "pos", pos.String())
 		// Now try to get the params for methods, path, etc.
-		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass.TypesInfo)
+		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
 		fmt.Println("match found ", match.Indicator.Function)
 		results = append(results, match)
 	})
@@ -158,55 +221,49 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	return results, nil
 }
 
-func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
-	ast.Inspect(file, func(node ast.Node) bool {
-		// If we are here, we need to keep looking until we find a function
-		ce, ok := node.(*ast.CallExpr)
-		// so we ask to keep digging in the node until we do
-		if !ok {
-			return true
-		}
-
-		// We have a function if we have made it here
-		funExpr := ce.Fun
-		funcInfo, err := wallylib.GetFuncInfo(funExpr, pkg.TypesInfo)
-		if err != nil {
-			return true
-		}
-
-		route := funcInfo.Match(n.RouteIndicators)
-		if route == nil {
-			// Don't keep going deeper in the node if there are no matches by now?
-			return true
-		}
-
-		// Get the position of the function in code
-		pos := pkg.Fset.Position(funExpr.Pos())
-
-		// Whether we are able to get params or not we have a match
-		match := wallylib.RouteMatch{
-			Indicator: *route,
-			Pos:       pos,
-		}
-
-		sel, ok := funExpr.(*ast.SelectorExpr)
-
-		sig, _ := wallylib.GetFuncSignature(sel.Sel, pkg.TypesInfo)
-		n.Logger.Debug("Checking for pos", "pos", pos.String())
-		// Now try to get the params for methods, path, etc.
-		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pkg.TypesInfo)
-
-		n.RouteMatches = append(n.RouteMatches, match)
-
-		return true
-	})
-}
-
-func (n *Navigator) ParseAST(pkg *packages.Package) {
-	for _, f := range pkg.Syntax {
-		n.ParseFile(f, pkg)
-	}
-}
+//func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
+//	ast.Inspect(file, func(node ast.Node) bool {
+//		// If we are here, we need to keep looking until we find a function
+//		ce, ok := node.(*ast.CallExpr)
+//		// so we ask to keep digging in the node until we do
+//		if !ok {
+//			return true
+//		}
+//
+//		// We have a function if we have made it here
+//		funExpr := ce.Fun
+//		funcInfo, err := wallylib.GetFuncInfo(funExpr, pkg.TypesInfo)
+//		if err != nil {
+//			return true
+//		}
+//
+//		route := funcInfo.Match(n.RouteIndicators)
+//		if route == nil {
+//			// Don't keep going deeper in the node if there are no matches by now?
+//			return true
+//		}
+//
+//		// Get the position of the function in code
+//		pos := pkg.Fset.Position(funExpr.Pos())
+//
+//		// Whether we are able to get params or not we have a match
+//		match := wallylib.RouteMatch{
+//			Indicator: *route,
+//			Pos:       pos,
+//		}
+//
+//		sel, ok := funExpr.(*ast.SelectorExpr)
+//
+//		sig, _ := wallylib.GetFuncSignature(sel.Sel, pkg.TypesInfo)
+//		n.Logger.Debug("Checking for pos", "pos", pos.String())
+//		// Now try to get the params for methods, path, etc.
+//		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pkg.TypesInfo)
+//
+//		n.RouteMatches = append(n.RouteMatches, match)
+//
+//		return true
+//	})
+//}
 
 func (n *Navigator) PrintResults() {
 	reporter.PrintResults(n.RouteMatches)
