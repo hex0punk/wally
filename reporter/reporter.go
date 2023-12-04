@@ -27,6 +27,7 @@ func PrintMach(match wallylib.RouteMatch) {
 			fmt.Printf("	%s: %s\n", k, v)
 		}
 	}
+	fmt.Println("Enclosed by: ", match.EnclosedBy)
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 	fmt.Println()
 }

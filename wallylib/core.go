@@ -17,10 +17,11 @@ type FuncInfo struct {
 }
 
 type RouteMatch struct {
-	Indicator indicator.Indicator // It should be FuncInfo instead
-	Params    map[string]string
-	Pos       token.Position
-	Signature *types.Signature
+	Indicator  indicator.Indicator // It should be FuncInfo instead
+	Params     map[string]string
+	Pos        token.Position
+	Signature  *types.Signature
+	EnclosedBy string
 }
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {

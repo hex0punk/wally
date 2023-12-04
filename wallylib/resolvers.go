@@ -57,6 +57,9 @@ func GetParamPos(sig *types.Signature, paramName string) (int, error) {
 }
 
 func GetValueFromExp(exp ast.Expr, pass *analysis.Pass) string {
+	// This should actually be called only AFTER we have checked facts to see if the value was already obtained,
+	// otherwise this could be double work for nothing. That way we also don't need to pass a Pass to so many
+	// funcs here, andinstead can stick to packages.TypesInfo
 	info := pass.TypesInfo
 	switch node := exp.(type) {
 	case *ast.BasicLit: // i.e. "/thepath"

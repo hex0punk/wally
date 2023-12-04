@@ -6,12 +6,16 @@ import (
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/ssa"
 	"log/slog"
 	"os"
 	"wally/checker"
+	"wally/checker/tokenfile"
 	"wally/indicator"
 	"wally/logger"
 	"wally/reporter"
@@ -42,11 +46,12 @@ func (n *Navigator) MapRoutes(path string) {
 		Name:     "wally",
 		Doc:      "maps HTTP and RPC routes",
 		Run:      n.Run,
-		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Requires: []*analysis.Analyzer{buildssa.Analyzer, inspect.Analyzer, tokenfile.Analyzer},
 	}
 
 	checker := checker.InitChecker(analyzer)
 	// TODO: consider this as part of a checker instead
+
 	results := map[*analysis.Analyzer]interface{}{}
 	for _, pkg := range pkgs {
 		pass := &analysis.Pass{
@@ -68,13 +73,14 @@ func (n *Navigator) MapRoutes(path string) {
 			AllPackageFacts:   nil,
 		}
 
-		res, err := inspect.Analyzer.Run(pass)
-		if err != nil {
-			fmt.Printf(err.Error())
-			continue
+		for _, a := range analyzer.Requires {
+			res, err := a.Run(pass)
+			if err != nil {
+				fmt.Printf(err.Error())
+				continue
+			}
+			pass.ResultOf[a] = res
 		}
-
-		pass.ResultOf[inspect.Analyzer] = res
 
 		result, err := pass.Analyzer.Run(pass)
 		if err != nil {
@@ -115,6 +121,7 @@ func LoadPackages(path string) []*packages.Package {
 
 func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	s, ssaWorked := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -186,6 +193,9 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		if !ok {
 			return
 		}
+
+		//currentFile := pass.Fset.File(ce.Fun.Pos())
+
 		// We have a function if we have made it here
 		funExpr := ce.Fun
 		funcInfo, err := wallylib.GetFuncInfo(funExpr, pass.TypesInfo)
@@ -215,6 +225,18 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Now try to get the params for methods, path, etc.
 		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
 		fmt.Println("match found ", match.Indicator.Function)
+
+		currentFile := File(pass, ce.Fun.Pos())
+		ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
+
+		if ssaWorked {
+			ef := ssa.EnclosingFunction(s.Pkg, ref)
+			if ef != nil {
+				fmt.Println("FANCY: ", ef.Name())
+				match.EnclosedBy = ef.Name()
+			}
+		}
+
 		results = append(results, match)
 	})
 
@@ -267,4 +289,9 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 func (n *Navigator) PrintResults() {
 	reporter.PrintResults(n.RouteMatches)
+}
+
+func File(pass *analysis.Pass, pos token.Pos) *ast.File {
+	m := pass.ResultOf[tokenfile.Analyzer].(map[*token.File]*ast.File)
+	return m[pass.Fset.File(pos)]
 }
