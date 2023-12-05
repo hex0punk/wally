@@ -14,7 +14,10 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"log/slog"
 	"os"
+	"strings"
 	"wally/checker"
+	"wally/checker/callermapper"
+	"wally/checker/cefinder"
 	"wally/checker/tokenfile"
 	"wally/indicator"
 	"wally/logger"
@@ -46,7 +49,7 @@ func (n *Navigator) MapRoutes(path string) {
 		Name:     "wally",
 		Doc:      "maps HTTP and RPC routes",
 		Run:      n.Run,
-		Requires: []*analysis.Analyzer{buildssa.Analyzer, inspect.Analyzer, tokenfile.Analyzer},
+		Requires: []*analysis.Analyzer{buildssa.Analyzer, inspect.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
 	}
 
 	checker := checker.InitChecker(analyzer)
@@ -122,6 +125,7 @@ func LoadPackages(path string) []*packages.Package {
 func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	s, ssaWorked := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
+	finder, finderWorked := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -202,12 +206,14 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		if err != nil {
 			return
 		}
-
+		//fmt.Println("LAPINGA0: ", funcInfo.Co)
 		route := funcInfo.Match(n.RouteIndicators)
 		if route == nil {
 			// Don't keep going deeper in the node if there are no matches by now?
 			return
 		}
+
+		fmt.Println("LAPINGA: ", funcInfo.Co)
 
 		// Get the position of the function in code
 		pos := pass.Fset.Position(funExpr.Pos())
@@ -216,6 +222,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		match := wallylib.RouteMatch{
 			Indicator: *route,
 			Pos:       pos,
+			Lasso:     funcInfo.Co,
 		}
 
 		sel, _ := funExpr.(*ast.SelectorExpr)
@@ -228,7 +235,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 		currentFile := File(pass, ce.Fun.Pos())
 		ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
-
 		if ssaWorked {
 			ef := ssa.EnclosingFunction(s.Pkg, ref)
 			if ef != nil {
@@ -236,6 +242,28 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 				match.EnclosedBy = ef.Name()
 			}
 		}
+
+		//Another exp
+		if finderWorked {
+			fmt.Println("FINDERWORKED")
+			for dec, fun := range finder.CE {
+				di := false
+				if strings.Contains(dec.Name.String(), "variableDelete") {
+					fmt.Println("OYEME")
+					di = true
+				}
+				for _, ex := range fun {
+					if di {
+						fmt.Println("COMPARING: ", ex.Fun)
+					}
+					if ex == ce.Fun || ex == ce {
+						match.Lasso = dec.Name.String()
+					}
+				}
+			}
+		}
+
+		// end another exp
 
 		results = append(results, match)
 	})

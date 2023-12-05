@@ -119,18 +119,19 @@ func GetValueFromExp(exp ast.Expr, pass *analysis.Pass) string {
 
 // ResolvePackageFromIdent TODO: This may be useful to get receiver type of func
 // Also, wrong name, its from an Expr, not from Idt, technically
-func ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (string, error) {
+func ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (string, string, error) {
 	idt, ok := expr.(*ast.Ident)
 	if !ok {
-		return "", errors.New("not an ident")
+		return "", "", errors.New("not an ident")
 	}
 
 	o1 := info.ObjectOf(idt)
+	co := RecFind(o1, nil)
 	if o1 != nil && o1.Pkg() != nil {
 		// TODO: Can also get the plain pkg name without path with `o1.Pkg().Name()`
-		return o1.Pkg().Path(), nil
+		return o1.Pkg().Path(), co, nil
 	}
 
 	errStr := fmt.Sprintf("unable to get package name from Ident")
-	return "", errors.New(errStr)
+	return "", "", errors.New(errStr)
 }
