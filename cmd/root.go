@@ -20,16 +20,9 @@ var (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "wally",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Short: "Wally is a cartographer and helps you find and map HTTP and RPC routes in Go code",
+	Long: `Wally is a cartographer from Scabb Island. 
+           He wears a monacle and claims to have traveled all over the world`,
 }
 
 type Config struct {

@@ -15,11 +15,11 @@ import (
 	"log/slog"
 	"os"
 	"wally/checker"
-	"wally/checker/callermapper"
-	"wally/checker/cefinder"
-	"wally/checker/tokenfile"
 	"wally/indicator"
 	"wally/logger"
+	"wally/passes/callermapper"
+	"wally/passes/cefinder"
+	"wally/passes/tokenfile"
 	"wally/reporter"
 	"wally/wallylib"
 )
@@ -28,6 +28,7 @@ type Navigator struct {
 	Logger          *slog.Logger
 	RouteIndicators []indicator.Indicator
 	RouteMatches    []wallylib.RouteMatch
+	RunSSA          bool
 }
 
 func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
@@ -78,7 +79,7 @@ func (n *Navigator) MapRoutes(path string) {
 		for _, a := range analyzer.Requires {
 			res, err := a.Run(pass)
 			if err != nil {
-				fmt.Printf(err.Error())
+				n.Logger.Error("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
 				continue
 			}
 			pass.ResultOf[a] = res
@@ -86,13 +87,12 @@ func (n *Navigator) MapRoutes(path string) {
 
 		result, err := pass.Analyzer.Run(pass)
 		if err != nil {
-			n.Logger.Warn("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
+			n.Logger.Error("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
 			continue
 		}
 		// This should be placed outside of this loop
 		// we want to collect single results here, then run through all at the end.
 		if result != nil {
-			//fmt.Println("printing results")
 			if passIssues, ok := result.([]wallylib.RouteMatch); ok {
 				for _, iss := range passIssues {
 					n.RouteMatches = append(n.RouteMatches, iss)
@@ -123,14 +123,12 @@ func LoadPackages(path string) []*packages.Package {
 
 func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	s, ssaWorked := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
-	finder, finderWorked := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
+	ssaBuild := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
+	callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
-		//(*ast.DeclStmt)(nil),
 		(*ast.GenDecl)(nil),
-		(*ast.AssignStmt)(nil),
 	}
 
 	results := []wallylib.RouteMatch{}
@@ -138,7 +136,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
-
 		if gen, ok := node.(*ast.GenDecl); ok {
 			n.RecordGlobals(gen, pass)
 		}
@@ -168,7 +165,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		match := wallylib.RouteMatch{
 			Indicator: *route,
 			Pos:       pos,
-			Lasso:     funcInfo.Co,
 		}
 
 		sel, _ := funExpr.(*ast.SelectorExpr)
@@ -178,29 +174,17 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Now try to get the params for methods, path, etc.
 		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
 
-		if ssa {
-			currentFile := File(pass, ce.Fun.Pos())
-			ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
-			if ssaWorked {
-				ef := ssa.EnclosingFunction(s.Pkg, ref)
-				if ef != nil {
-					match.EnclosedBy = ef.Name()
-				}
+		//Get the enclosing func
+		if n.RunSSA {
+			if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssaBuild); ssaBuild != nil {
+				match.EnclosedBy = ssaFunc.Name()
+			}
+		} else {
+			if decl := callMapper.EnclosingFunc(ce); decl != nil {
+				match.EnclosedBy = decl.Name.String()
 			}
 		}
 
-		//Another exp
-		if finderWorked {
-			for dec, fun := range finder.CE {
-				for _, ex := range fun {
-					if ex == ce.Fun || ex == ce {
-						match.Lasso = dec.Name.String()
-					}
-				}
-			}
-		}
-
-		// end another exp
 		results = append(results, match)
 	})
 
@@ -209,32 +193,39 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 	for _, spec := range gen.Specs {
-		switch s := spec.(type) {
-		case *ast.ValueSpec:
-			for k, id := range s.Values {
-				res := wallylib.GetValueFromExp(id, pass)
-				if res != "" {
-					o1 := pass.TypesInfo.ObjectOf(s.Names[k])
-					switch tt := o1.(type) {
-					case *types.Var:
-						if tt.Parent() == tt.Pkg().Scope() {
-							// Scope level
-							gv := new(checker.GlobalVar)
-							gv.Val = res
-							pass.ExportObjectFact(o1, gv)
-						}
-					}
+		s, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		for k, id := range s.Values {
+			res := wallylib.GetValueFromExp(id, pass)
+			if res != "" {
+				continue
+			}
+			o1 := pass.TypesInfo.ObjectOf(s.Names[k])
+			if tt, ok := o1.(*types.Var); ok {
+				if tt.Parent() == tt.Pkg().Scope() {
+					// Scope level
+					gv := new(checker.GlobalVar)
+					gv.Val = res
+					pass.ExportObjectFact(o1, gv)
 				}
 			}
 		}
 	}
 }
 
-func (n *Navigator) PrintResults() {
-	reporter.PrintResults(n.RouteMatches)
+func GetEnclosingFuncWithSSA(pass *analysis.Pass, ce *ast.CallExpr, ssaBuild *buildssa.SSA) *ssa.Function {
+	currentFile := File(pass, ce.Fun.Pos())
+	ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
+	return ssa.EnclosingFunction(ssaBuild.Pkg, ref)
 }
 
 func File(pass *analysis.Pass, pos token.Pos) *ast.File {
 	m := pass.ResultOf[tokenfile.Analyzer].(map[*token.File]*ast.File)
 	return m[pass.Fset.File(pos)]
+}
+
+func (n *Navigator) PrintResults() {
+	reporter.PrintResults(n.RouteMatches)
 }

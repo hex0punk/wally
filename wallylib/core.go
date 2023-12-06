@@ -2,7 +2,6 @@ package wallylib
 
 import (
 	"errors"
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -20,14 +19,11 @@ type FuncInfo struct {
 }
 
 type RouteMatch struct {
-	Indicator indicator.Indicator // It should be FuncInfo instead
-	Params    map[string]string
-	Pos       token.Position
-	Signature *types.Signature
-
+	Indicator  indicator.Indicator // It should be FuncInfo instead
+	Params     map[string]string
+	Pos        token.Position
+	Signature  *types.Signature
 	EnclosedBy string
-
-	Lasso string
 }
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
@@ -50,35 +46,6 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 	return match
 }
 
-func RecFind(o1 types.Object, sc *types.Scope) string {
-	//experiment
-	var par *types.Scope
-	if sc == nil {
-		par = o1.Parent()
-	} else {
-		par = sc
-	}
-
-	if par == nil {
-		return ""
-	}
-
-	//fmt.Println("continue")
-	for _, na := range par.Names() {
-		o := o1.Pkg().Scope().Lookup(na)
-		if fff, ok := o.(*types.Func); ok {
-			fmt.Println("LASSOFOUND ", fff.FullName())
-			return fff.FullName()
-		}
-	}
-
-	if par == o1.Pkg().Scope() {
-		return ""
-	}
-
-	return RecFind(o1, par.Parent())
-}
-
 func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 	sel, ok := expr.(*ast.SelectorExpr)
 	if !ok {
@@ -86,23 +53,20 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 	}
 
 	funcName := GetName(sel.Sel)
-	pkgPath, co, err := ResolvePackageFromIdent(sel.Sel, info)
+	pkgPath, err := ResolvePackageFromIdent(sel.Sel, info)
 	if err != nil && funcName != "" {
 		// Try to get pkg name from the selector, as hti si likely not a pkg.func
 		// but a struct.fun
-		pkgPath, co, err = ResolvePackageFromIdent(sel.X, info)
+		pkgPath, err = ResolvePackageFromIdent(sel.X, info)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	fmt.Println("HIJOLE", co)
-
 	return &FuncInfo{
 		Package: pkgPath,
 		//Type: nil,
 		Name: funcName,
-		Co:   co,
 	}, nil
 }
 
@@ -131,4 +95,76 @@ func GetName(e ast.Expr) string {
 	} else {
 		return ident.Name
 	}
+}
+
+func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
+	var result []*ast.CallExpr
+	switch s := stmt.(type) {
+	case *ast.ExprStmt:
+		ce := callExprFromExpr(s.X)
+		if ce != nil {
+			result = append(result, ce)
+		}
+	case *ast.SwitchStmt:
+		for _, iclause := range s.Body.List {
+			clause := iclause.(*ast.CaseClause)
+			for _, stm := range clause.Body {
+				bodyExps := GetExprsFromStmt(stm)
+				if bodyExps != nil && len(bodyExps) > 0 {
+					result = append(result, bodyExps...)
+				}
+			}
+		}
+	case *ast.IfStmt:
+		condCe := callExprFromExpr(s.Cond)
+		if condCe != nil {
+			result = append(result, condCe)
+		}
+		if s.Init != nil {
+			initCe := GetExprsFromStmt(s.Init)
+			if initCe != nil && len(initCe) > 0 {
+				result = append(result, initCe...)
+			}
+		}
+		if s.Else != nil {
+			elseCe := GetExprsFromStmt(s.Else)
+			if elseCe != nil && len(elseCe) > 0 {
+				result = append(result, elseCe...)
+			}
+		}
+		ces := GetExprsFromStmt(s.Body)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
+	case *ast.BlockStmt:
+		for _, stm := range s.List {
+			ce := GetExprsFromStmt(stm)
+			if ce != nil {
+				result = append(result, ce...)
+			}
+		}
+	case *ast.AssignStmt:
+		for _, rhs := range s.Rhs {
+			ce := callExprFromExpr(rhs)
+			if ce != nil {
+				result = append(result, ce)
+			}
+		}
+		for _, lhs := range s.Lhs {
+			ce := callExprFromExpr(lhs)
+			if ce != nil {
+				result = append(result, ce)
+			}
+		}
+
+	}
+	return result
+}
+
+func callExprFromExpr(e ast.Expr) *ast.CallExpr {
+	switch e := e.(type) {
+	case *ast.CallExpr:
+		return e
+	}
+	return nil
 }
