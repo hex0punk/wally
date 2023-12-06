@@ -189,11 +189,11 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		//Get the enclosing func
 		if n.RunSSA {
 			if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssaBuild); ssaBuild != nil {
-				match.EnclosedBy = ssaFunc.Name()
+				match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
 			}
 		} else {
 			if decl := callMapper.EnclosingFunc(ce); decl != nil {
-				match.EnclosedBy = decl.Name.String()
+				match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
 			}
 		}
 
