@@ -1,10 +1,6 @@
-/*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
-	"fmt"
 	"github.com/spf13/viper"
 	"os"
 	"wally/indicator"
@@ -26,32 +22,37 @@ var rootCmd = &cobra.Command{
 }
 
 type Config struct {
-	Indicators []indicator.Indicator `yaml:"indicators,mapstructure"`
+	Indicators []indicator.Indicator `yaml:"indicators"`
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	fmt.Println("not reading config")
-	if config {
-		fmt.Println("reading config")
-		err := viper.ReadInConfig()
-		if err != nil { // Handle errors reading the config file
-			panic(fmt.Errorf("fatal error config file: %w", err))
-		}
-
-		//indicators := viper.Get("indicators")
-		re := viper.Get("indicators")
-		fmt.Println(re)
-		var indicators []indicator.Indicator
-		viper.UnmarshalKey("indicators", &config)
-		fmt.Println(indicators[0])
-
-		//if in, ok := indicators.(*[]indicator.Indicator); ok {
-		//	fmt.Println("here")
-		//	fmt.Println(in)
-		//}
-	}
+	//if config {
+	//	fmt.Println("reading config")
+	//	err := viper.ReadInConfig()
+	//	if err != nil { // Handle errors reading the config file
+	//		panic(fmt.Errorf("fatal error config file: %w", err))
+	//	}
+	//
+	//	//re := viper.Get("indicators")
+	//	//fmt.Println(re)
+	//	var indicators []indicator.Indicator
+	//	viper.Unmarshal(&config)
+	//	fmt.Println("Indicators")
+	//	for _, ind := range indicators {
+	//		fmt.Printf("package: %s\n", ind.Package)
+	//		fmt.Printf("function: %s\n", ind.Function)
+	//		fmt.Println()
+	//	}
+	//	//in := viper.get
+	//	//for _, ind := range in.([]interface{}) {
+	//	//	fmt.Printf("package: %s\n", ind.(indicator.Indicator).Package)
+	//	//	fmt.Printf("function: %s\n", ind.(indicator.Indicator).Function)
+	//	//	fmt.Println()
+	//	//}
+	//	//fmt.Println(viper.Get("indicators"))
+	//}
 
 	err := rootCmd.Execute()
 	if err != nil {
@@ -60,21 +61,13 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.wally.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().CountVarP(&verbose, "verbose", "v", "verbose output. Up to -vvv levels of verbosity are supported")
-	//rootCmd.PersistentFlags().BoolVarP(&config, "config", "c", true, "whether to use .wally.yaml")
-	//
-	//viper.SetDefault("ContentDir", ".")
-	//
-	//viper.SetConfigName(".wally")
-	//viper.SetConfigType("yaml")
-	//viper.AddConfigPath(".")
+	rootCmd.PersistentFlags().BoolVarP(&config, "config", "c", true, "whether to use .wally.yaml")
+
+	viper.SetDefault("ContentDir", ".")
+
+	viper.SetConfigName(".wally")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
 }

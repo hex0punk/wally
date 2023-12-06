@@ -49,7 +49,7 @@ func (n *Navigator) MapRoutes(path string) {
 		Name:     "wally",
 		Doc:      "maps HTTP and RPC routes",
 		Run:      n.Run,
-		Requires: []*analysis.Analyzer{buildssa.Analyzer, inspect.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
+		Requires: []*analysis.Analyzer{inspect.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
 	}
 
 	checker := checker.InitChecker(analyzer)
@@ -74,6 +74,15 @@ func (n *Navigator) MapRoutes(path string) {
 			ExportPackageFact: nil,
 			AllObjectFacts:    nil,
 			AllPackageFacts:   nil,
+		}
+
+		if n.RunSSA {
+			res, err := buildssa.Analyzer.Run(pass)
+			if err != nil {
+				n.Logger.Error("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
+				continue
+			}
+			pass.ResultOf[buildssa.Analyzer] = res
 		}
 
 		for _, a := range analyzer.Requires {
@@ -122,8 +131,11 @@ func LoadPackages(path string) []*packages.Package {
 }
 
 func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
+	var ssaBuild *buildssa.SSA
+	if n.RunSSA {
+		ssaBuild = pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
+	}
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	ssaBuild := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
 
 	nodeFilter := []ast.Node{

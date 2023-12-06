@@ -15,16 +15,16 @@ const (
 )
 
 type Indicator struct {
-	Package       string
-	Type          string
-	Function      string
-	Params        []RouteParam
-	IndicatorType IndicatorType
+	Package       string        `yaml:"package"`
+	Type          string        `yaml:"type"`
+	Function      string        `yaml:"function"`
+	Params        []RouteParam  `yaml:"params"`
+	IndicatorType IndicatorType `yaml:"indicatorType"`
 }
 
 type RouteParam struct {
-	Name string
-	Pos  int
+	Name string `yaml:"name"`
+	Pos  int    `yaml:"pos"`
 }
 
 func InitIndicators() []Indicator {

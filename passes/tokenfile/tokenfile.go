@@ -8,6 +8,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
+// code for this analyzeris taken directly from
+// https://github.com/dominikh/go-tools/blob/5447921adabdc6be434408ab8911a62fed3e0e52/analysis/facts/tokenfile/token.go
 var Analyzer = &analysis.Analyzer{
 	Name: "tokenfileanalyzer",
 	Doc:  "creates a mapping of *token.File to *ast.File",
