@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"log/slog"
 	"os"
-	"strings"
 	"wally/checker"
 	"wally/checker/callermapper"
 	"wally/checker/cefinder"
@@ -140,57 +139,8 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	// boolean anymore as it'll visit all the nodes based on the filter.
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
 
-		if de, ok := node.(*ast.AssignStmt); ok {
-			for _, exp := range de.Rhs {
-				if id, ok := exp.(*ast.Ident); ok {
-					res := wallylib.GetValueFromExp(id, pass)
-					if res != "" {
-						fmt.Println("HOLYCRAP ", res)
-					}
-				}
-			}
-			//if v.Tok != token.DEFINE {
-			//	return
-			//}
-			//for _, exp := range v.Lhs {
-			//	if id, ok := exp.(*ast.Ident); ok {
-			//		check(id, "var", initialisms)
-			//	}
-			//}
-		}
 		if gen, ok := node.(*ast.GenDecl); ok {
-			for _, spec := range gen.Specs {
-				switch s := spec.(type) {
-				case *ast.ValueSpec:
-					for k, id := range s.Values {
-						res := wallylib.GetValueFromExp(id, pass)
-						if res != "" {
-							fmt.Println("FOUND SOMETHING! ", res, s.Names[k].Name)
-
-							o1 := pass.TypesInfo.ObjectOf(s.Names[k])
-							switch tt := o1.(type) {
-							case *types.Var:
-								fmt.Println("is a Var ", res, tt.Name())
-								if tt.Parent() == tt.Pkg().Scope() {
-									// Scope level
-									fmt.Println("==================wowavar==================")
-									//fmt.Println("is a pkg scope ", res, tt.Name())
-									fmt.Println("wowavar Val", res)
-									fmt.Println("wowavar name", s.Names[k].Name)
-									fmt.Println("wowavar tt name", tt.Name())
-
-									gv := new(checker.GlobalVar)
-									gv.Val = res
-									pass.ExportObjectFact(o1, gv)
-								}
-							case *types.Const:
-								fmt.Println("is a Const ", res, tt.Name())
-							}
-							//fmt.Println("OFID ", s.Names[k].Name)
-						}
-					}
-				}
-			}
+			n.RecordGlobals(gen, pass)
 		}
 
 		ce, ok := node.(*ast.CallExpr)
@@ -198,22 +148,18 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		//currentFile := pass.Fset.File(ce.Fun.Pos())
-
 		// We have a function if we have made it here
 		funExpr := ce.Fun
 		funcInfo, err := wallylib.GetFuncInfo(funExpr, pass.TypesInfo)
 		if err != nil {
 			return
 		}
-		//fmt.Println("LAPINGA0: ", funcInfo.Co)
+
 		route := funcInfo.Match(n.RouteIndicators)
 		if route == nil {
 			// Don't keep going deeper in the node if there are no matches by now?
 			return
 		}
-
-		fmt.Println("LAPINGA: ", funcInfo.Co)
 
 		// Get the position of the function in code
 		pos := pass.Fset.Position(funExpr.Pos())
@@ -231,31 +177,22 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		n.Logger.Debug("Checking for pos", "pos", pos.String())
 		// Now try to get the params for methods, path, etc.
 		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
-		fmt.Println("match found ", match.Indicator.Function)
 
-		currentFile := File(pass, ce.Fun.Pos())
-		ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
-		if ssaWorked {
-			ef := ssa.EnclosingFunction(s.Pkg, ref)
-			if ef != nil {
-				fmt.Println("FANCY: ", ef.Name())
-				match.EnclosedBy = ef.Name()
+		if ssa {
+			currentFile := File(pass, ce.Fun.Pos())
+			ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
+			if ssaWorked {
+				ef := ssa.EnclosingFunction(s.Pkg, ref)
+				if ef != nil {
+					match.EnclosedBy = ef.Name()
+				}
 			}
 		}
 
 		//Another exp
 		if finderWorked {
-			fmt.Println("FINDERWORKED")
 			for dec, fun := range finder.CE {
-				di := false
-				if strings.Contains(dec.Name.String(), "variableDelete") {
-					fmt.Println("OYEME")
-					di = true
-				}
 				for _, ex := range fun {
-					if di {
-						fmt.Println("COMPARING: ", ex.Fun)
-					}
 					if ex == ce.Fun || ex == ce {
 						match.Lasso = dec.Name.String()
 					}
@@ -264,56 +201,34 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		// end another exp
-
 		results = append(results, match)
 	})
 
 	return results, nil
 }
 
-//func (n *Navigator) ParseFile(file *ast.File, pkg *packages.Package) {
-//	ast.Inspect(file, func(node ast.Node) bool {
-//		// If we are here, we need to keep looking until we find a function
-//		ce, ok := node.(*ast.CallExpr)
-//		// so we ask to keep digging in the node until we do
-//		if !ok {
-//			return true
-//		}
-//
-//		// We have a function if we have made it here
-//		funExpr := ce.Fun
-//		funcInfo, err := wallylib.GetFuncInfo(funExpr, pkg.TypesInfo)
-//		if err != nil {
-//			return true
-//		}
-//
-//		route := funcInfo.Match(n.RouteIndicators)
-//		if route == nil {
-//			// Don't keep going deeper in the node if there are no matches by now?
-//			return true
-//		}
-//
-//		// Get the position of the function in code
-//		pos := pkg.Fset.Position(funExpr.Pos())
-//
-//		// Whether we are able to get params or not we have a match
-//		match := wallylib.RouteMatch{
-//			Indicator: *route,
-//			Pos:       pos,
-//		}
-//
-//		sel, ok := funExpr.(*ast.SelectorExpr)
-//
-//		sig, _ := wallylib.GetFuncSignature(sel.Sel, pkg.TypesInfo)
-//		n.Logger.Debug("Checking for pos", "pos", pos.String())
-//		// Now try to get the params for methods, path, etc.
-//		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pkg.TypesInfo)
-//
-//		n.RouteMatches = append(n.RouteMatches, match)
-//
-//		return true
-//	})
-//}
+func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
+	for _, spec := range gen.Specs {
+		switch s := spec.(type) {
+		case *ast.ValueSpec:
+			for k, id := range s.Values {
+				res := wallylib.GetValueFromExp(id, pass)
+				if res != "" {
+					o1 := pass.TypesInfo.ObjectOf(s.Names[k])
+					switch tt := o1.(type) {
+					case *types.Var:
+						if tt.Parent() == tt.Pkg().Scope() {
+							// Scope level
+							gv := new(checker.GlobalVar)
+							gv.Val = res
+							pass.ExportObjectFact(o1, gv)
+						}
+					}
+				}
+			}
+		}
+	}
+}
 
 func (n *Navigator) PrintResults() {
 	reporter.PrintResults(n.RouteMatches)
