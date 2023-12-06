@@ -22,11 +22,14 @@ func PrintMach(match wallylib.RouteMatch) {
 	fmt.Println("Params: ")
 	for k, v := range match.Params {
 		if v == "" {
-			fmt.Printf("	%s: %s\n", k, "<could not resolve>")
-		} else {
-			fmt.Printf("	%s: %s\n", k, v)
+			v = "<could not resolve>"
 		}
+		if k == "" {
+			k = "<not specified>"
+		}
+		fmt.Printf("	%s: %s\n", k, v)
 	}
+	fmt.Println("Enclosed by: ", match.EnclosedBy)
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 	fmt.Println()
 }

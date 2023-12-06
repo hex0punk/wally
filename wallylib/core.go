@@ -14,13 +14,16 @@ type FuncInfo struct {
 	Name      string
 	Route     string
 	Signature *types.Signature
+
+	Co string
 }
 
 type RouteMatch struct {
-	Indicator indicator.Indicator // It should be FuncInfo instead
-	Params    map[string]string
-	Pos       token.Position
-	Signature *types.Signature
+	Indicator  indicator.Indicator // It should be FuncInfo instead
+	Params     map[string]string
+	Pos        token.Position
+	Signature  *types.Signature
+	EnclosedBy string
 }
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
@@ -92,4 +95,76 @@ func GetName(e ast.Expr) string {
 	} else {
 		return ident.Name
 	}
+}
+
+func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
+	var result []*ast.CallExpr
+	switch s := stmt.(type) {
+	case *ast.ExprStmt:
+		ce := callExprFromExpr(s.X)
+		if ce != nil {
+			result = append(result, ce)
+		}
+	case *ast.SwitchStmt:
+		for _, iclause := range s.Body.List {
+			clause := iclause.(*ast.CaseClause)
+			for _, stm := range clause.Body {
+				bodyExps := GetExprsFromStmt(stm)
+				if bodyExps != nil && len(bodyExps) > 0 {
+					result = append(result, bodyExps...)
+				}
+			}
+		}
+	case *ast.IfStmt:
+		condCe := callExprFromExpr(s.Cond)
+		if condCe != nil {
+			result = append(result, condCe)
+		}
+		if s.Init != nil {
+			initCe := GetExprsFromStmt(s.Init)
+			if initCe != nil && len(initCe) > 0 {
+				result = append(result, initCe...)
+			}
+		}
+		if s.Else != nil {
+			elseCe := GetExprsFromStmt(s.Else)
+			if elseCe != nil && len(elseCe) > 0 {
+				result = append(result, elseCe...)
+			}
+		}
+		ces := GetExprsFromStmt(s.Body)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
+	case *ast.BlockStmt:
+		for _, stm := range s.List {
+			ce := GetExprsFromStmt(stm)
+			if ce != nil {
+				result = append(result, ce...)
+			}
+		}
+	case *ast.AssignStmt:
+		for _, rhs := range s.Rhs {
+			ce := callExprFromExpr(rhs)
+			if ce != nil {
+				result = append(result, ce)
+			}
+		}
+		for _, lhs := range s.Lhs {
+			ce := callExprFromExpr(lhs)
+			if ce != nil {
+				result = append(result, ce)
+			}
+		}
+
+	}
+	return result
+}
+
+func callExprFromExpr(e ast.Expr) *ast.CallExpr {
+	switch e := e.(type) {
+	case *ast.CallExpr:
+		return e
+	}
+	return nil
 }
