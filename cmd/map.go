@@ -26,7 +26,7 @@ func init() {
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
-	indicators := indicator.InitIndicators()
+	indicators := indicator.InitIndicators(wallyConfig.Indicators)
 	navigator := navigator.NewNavigator(verbose, indicators)
 	navigator.MapRoutes(path)
 	navigator.PrintResults()

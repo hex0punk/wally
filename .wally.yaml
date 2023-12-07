@@ -1,15 +1,13 @@
 indicators:
   - package: "github.com/hashicorp/nomad/command/agent"
-    type: "s"
+    type: ""
     function: "forward"
     indicatorType: 1
     params:
       - name: "method"
-        pos: 0
-  - package: "github.com/hashicorp/nomad/command/agent"
-    type: "s"
-    function: "forward"
+  - package: "github.com/hashicorp/nomad/nomad"
+    type: ""
+    function: "RPC"
     indicatorType: 1
     params:
       - name: "method"
-        pos: 0

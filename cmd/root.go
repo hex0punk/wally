@@ -1,16 +1,23 @@
 package cmd
 
 import (
-	"github.com/spf13/viper"
+	"fmt"
+	"gopkg.in/yaml.v2"
+	"log"
 	"os"
 	"wally/indicator"
 
 	"github.com/spf13/cobra"
 )
 
+type WallyConfig struct {
+	Indicators []indicator.Indicator `yaml:"indicators"`
+}
+
 var (
-	verbose int
-	config  bool
+	verbose     int
+	config      string
+	wallyConfig WallyConfig
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -21,38 +28,25 @@ var rootCmd = &cobra.Command{
            He wears a monacle and claims to have traveled all over the world`,
 }
 
-type Config struct {
-	Indicators []indicator.Indicator `yaml:"indicators"`
-}
-
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	//if config {
-	//	fmt.Println("reading config")
-	//	err := viper.ReadInConfig()
-	//	if err != nil { // Handle errors reading the config file
-	//		panic(fmt.Errorf("fatal error config file: %w", err))
-	//	}
-	//
-	//	//re := viper.Get("indicators")
-	//	//fmt.Println(re)
-	//	var indicators []indicator.Indicator
-	//	viper.Unmarshal(&config)
-	//	fmt.Println("Indicators")
-	//	for _, ind := range indicators {
-	//		fmt.Printf("package: %s\n", ind.Package)
-	//		fmt.Printf("function: %s\n", ind.Function)
-	//		fmt.Println()
-	//	}
-	//	//in := viper.get
-	//	//for _, ind := range in.([]interface{}) {
-	//	//	fmt.Printf("package: %s\n", ind.(indicator.Indicator).Package)
-	//	//	fmt.Printf("function: %s\n", ind.(indicator.Indicator).Function)
-	//	//	fmt.Println()
-	//	//}
-	//	//fmt.Println(viper.Get("indicators"))
-	//}
+	path := config
+	wallyConfig = WallyConfig{}
+	fmt.Println("Looking for config file in ", path)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		fmt.Println("Configuration file `%s` not found. Will run stock indicators only", path)
+	} else {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = yaml.Unmarshal([]byte(data), &wallyConfig)
+		if err != nil {
+			fmt.Println("Could not load configuration file: %s. Will run stock indicators only", err)
+		}
+	}
 
 	err := rootCmd.Execute()
 	if err != nil {
@@ -63,11 +57,5 @@ func Execute() {
 func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().CountVarP(&verbose, "verbose", "v", "verbose output. Up to -vvv levels of verbosity are supported")
-	rootCmd.PersistentFlags().BoolVarP(&config, "config", "c", true, "whether to use .wally.yaml")
-
-	viper.SetDefault("ContentDir", ".")
-
-	viper.SetConfigName(".wally")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
+	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "./.wally.yaml", "path for config file containing indicators")
 }
