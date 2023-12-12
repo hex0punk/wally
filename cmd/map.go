@@ -28,6 +28,7 @@ func init() {
 func mapRoutes(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators()
 	navigator := navigator.NewNavigator(verbose, indicators)
+	navigator.RunSSA = runSSA
 	navigator.MapRoutes(path)
 	navigator.PrintResults()
 }

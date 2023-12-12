@@ -7,9 +7,12 @@ import (
 	"go/types"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
+	"golang.org/x/tools/go/analysis/passes/ctrlflow"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/callgraph"
+	"golang.org/x/tools/go/callgraph/rta"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"log/slog"
@@ -18,7 +21,6 @@ import (
 	"wally/indicator"
 	"wally/logger"
 	"wally/passes/callermapper"
-	"wally/passes/cefinder"
 	"wally/passes/tokenfile"
 	"wally/reporter"
 	"wally/wallylib"
@@ -45,11 +47,13 @@ func (n *Navigator) MapRoutes(path string) {
 
 	pkgs := LoadPackages(path)
 
+	// TODO: No real need to use ctrlflow.Analyzer if using SSA
+	// TODO: Also, add call graph functionality using SSA
 	var analyzer = &analysis.Analyzer{
 		Name:     "wally",
 		Doc:      "maps HTTP and RPC routes",
 		Run:      n.Run,
-		Requires: []*analysis.Analyzer{inspect.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
+		Requires: []*analysis.Analyzer{inspect.Analyzer, ctrlflow.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
 	}
 
 	checker := checker.InitChecker(analyzer)
@@ -136,7 +140,8 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		ssaBuild = pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	}
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
+	//callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
+	//flow := pass.ResultOf[ctrlflow.Analyzer].(*ctrlflow.CFGs)
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -190,12 +195,83 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		if n.RunSSA {
 			if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssaBuild); ssaBuild != nil {
 				match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
-			}
-		} else {
-			if decl := callMapper.EnclosingFunc(ce); decl != nil {
-				match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
+				res := rta.Analyze([]*ssa.Function{ssaFunc}, true)
+				path := ""
+
+				for ff, _ := range callgraph.CalleesOf(res.CallGraph.Root) {
+					path = path + " --> " + ff.String()
+				}
+				//
+				//initT := res.CallGraph.Root.Func.Pkg.Func("main")
+				//if initT != nil {
+				//	fmt.Println("HEREEEE!")
+				//}
+				//res2 := rta.Analyze([]*ssa.Function{initT}, true)
+				//res3 := callgraph.PathSearch(res.CallGraph.Root, func(nn *callgraph.Node) bool {
+				//	if nn.Func == initT {
+				//		return true
+				//	}
+				//	return false
+				//})
+				//
+				//for _, f1 := range res3 {
+				//	path = path + " --> " + f1.String()
+				//}
+				//
+				//for f1, _ := range res.CallGraph. {
+				//	path = path + " --> " + f1.String()
+				//}
+
+				//
+				//if ssaFunc.Parent() != nil {
+				//	path = ssaFunc.Parent().Name() + "canary"
+				//}
+				//
+				//for _, fa := range ssaBuild.SrcFuncs {
+				//	pos2 := pass.Fset.Position(fa.Pos())
+				//	ob := fa.Object()
+				//	switch y := ob.(type) {
+				//	case *types.
+				//	}
+				//	path = path + " --> " + pos2.String()
+				//}
+				match.CallPath = path
+				//			//fmt.Println("OHCRAP:
 			}
 		}
+		//} else {
+		//	if decl := callMapper.EnclosingFunc(ce); decl != nil {
+		//		match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
+		//
+		//		if flow != nil {
+		//			path := ""
+		//			blocks := flow.FuncDecl(decl)
+		//			for _, block := range blocks.Blocks {
+		//				//for _, n2 := range block.Nodes {
+		//				//	pos2 := pass.Fset.Position(n2.Pos())
+		//				//	path = path + " --> " + pos2.String()
+		//				//	if a, ok := n2.(*ast.FuncDecl); ok {
+		//				//		path = path + " --> " + a.Name.String()
+		//				//		fmt.Println("ADDEDA")
+		//				//	}
+		//				//}
+		//
+		//				for _, n2 := range block.Succs {
+		//					for _, n3 := range n2.Nodes {
+		//						pos2 := pass.Fset.Position(n3.Pos())
+		//						path = path + " --> " + pos2.String()
+		//						if a, ok := n3.(*ast.FuncDecl); ok {
+		//							path = path + " --> " + a.Name.String()
+		//							fmt.Println("ADDEDA")
+		//						}
+		//					}
+		//				}
+		//			}
+		//			match.CallPath = path
+		//			//fmt.Println("OHCRAP: ", path)
+		//		}
+		//	}
+		//}
 
 		results = append(results, match)
 	})

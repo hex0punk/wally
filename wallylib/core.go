@@ -24,6 +24,7 @@ type RouteMatch struct {
 	Pos        token.Position
 	Signature  *types.Signature
 	EnclosedBy string
+	CallPath   string
 }
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
