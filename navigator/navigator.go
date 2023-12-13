@@ -11,8 +11,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/go/callgraph"
-	"golang.org/x/tools/go/callgraph/rta"
+	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"log/slog"
@@ -31,6 +30,7 @@ type Navigator struct {
 	RouteIndicators []indicator.Indicator
 	RouteMatches    []wallylib.RouteMatch
 	RunSSA          bool
+	Packages        []*packages.Package
 }
 
 func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
@@ -46,6 +46,7 @@ func (n *Navigator) MapRoutes(path string) {
 	}
 
 	pkgs := LoadPackages(path)
+	n.Packages = pkgs
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
 	// TODO: Also, add call graph functionality using SSA
@@ -195,12 +196,89 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		if n.RunSSA {
 			if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssaBuild); ssaBuild != nil {
 				match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
-				res := rta.Analyze([]*ssa.Function{ssaFunc}, true)
-				path := ""
 
-				for ff, _ := range callgraph.CalleesOf(res.CallGraph.Root) {
-					path = path + " --> " + ff.String()
+				res := static.CallGraph(ssaBuild.Pkg.Prog)
+				path := ""
+				for _, f1 := range res.Nodes[ssaFunc].In {
+					// caller of enclosing
+					pos2 := pass.Fset.Position(f1.Pos())
+					path = path + " 1--> " + pos2.String()
+					//for _, f2 := range f1.Caller.In {
+					//	path = path + " --> " + f2.String()
+					//}
+
+					// enclosing of caller
+					pos2 = pass.Fset.Position(f1.Caller.Func.Pos())
+					path = path + " 2--> " + pos2.String()
+
+					for _, f2 := range res.Nodes[f1.Caller.Func].In {
+						pos2 = pass.Fset.Position(f2.Pos())
+						path = path + " 3--> " + f2.String()
+					}
+
+					//f1.Caller.In
+					for _, f2 := range f1.Caller.In {
+						pos2 = pass.Fset.Position(f2.Pos())
+						path = path + " 4--> " + f2.String()
+
+						for _, f3 := range f2.Caller.In {
+							//pos2 = pass.Fset.Position(f2.Pos())
+							path = path + " 5--> " + f3.String()
+						}
+					}
 				}
+
+				//for _, f1 := range res.Nodes[ssaFunc].In {
+				//	fmt.Println("ANODE: ", f1.Description())
+				//}
+
+				//prog, _ := ssautil.AllPackages(n.Packages, 0)
+				//fmt.Println("BUILDING")
+				//prog.Build()
+				//fmt.Println("GRAPHING")
+				//res := static.CallGraph(prog)
+				//fmt.Println("ITER")
+				//for _, f1 := range res.Nodes[ssaFunc].In {
+				//	// caller of enclosing
+				//	pos2 := pass.Fset.Position(f1.Pos())
+				//	path = path + " 1--> " + pos2.String()
+				//	//for _, f2 := range f1.Caller.In {
+				//	//	path = path + " --> " + f2.String()
+				//	//}
+				//
+				//	// enclosing of caller
+				//	pos2 = pass.Fset.Position(f1.Caller.Func.Pos())
+				//	path = path + " 2--> " + pos2.String()
+				//
+				//	for _, f2 := range res.Nodes[f1.Caller.Func].In {
+				//		pos2 = pass.Fset.Position(f2.Pos())
+				//		path = path + " 3--> " + f2.String()
+				//	}
+				//
+				//	//f1.Caller.In
+				//	for _, f2 := range f1.Caller.In {
+				//		pos2 = pass.Fset.Position(f2.Pos())
+				//		path = path + " 4--> " + f2.String()
+				//
+				//		for _, f3 := range f2.Caller.In {
+				//			//pos2 = pass.Fset.Position(f2.Pos())
+				//			path = path + " 5--> " + f3.String()
+				//		}
+				//	}
+				//}
+
+				//for ff, _ := range callgraph.CalleesOf(res.CallGraph.Root) {
+				//	path = path + " --> " + ff.String()
+				//}
+
+				//for _, f1 := range res.CallGraph.Nodes {
+				//	path = path + " --> " + f1.String()
+				//}
+
+				//mains := ssautil.MainPackages([]*ssa.Package{res.CallGraph.Root.Func.Pkg})
+				//if len(mains) > 0 {
+				//	fmt.Println("FOUND MORE")
+				//}
 				//
 				//initT := res.CallGraph.Root.Func.Pkg.Func("main")
 				//if initT != nil {
