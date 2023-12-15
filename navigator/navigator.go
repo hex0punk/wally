@@ -57,12 +57,15 @@ func (n *Navigator) MapRoutes(path string) {
 	n.Packages = pkgs
 
 	if n.RunSSA {
+		n.Logger.Info("Building SSA program")
 		n.SSA = &SSA{
 			Packages: []*ssa.Package{},
 		}
 		prog, ssaPkgs := ssautil.AllPackages(pkgs, 0)
 		n.SSA.Packages = ssaPkgs
 		prog.Build()
+
+		n.Logger.Info("Generating SSA based callgraph")
 		n.SSA.Callgraph = cha.CallGraph(prog)
 	}
 

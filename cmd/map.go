@@ -33,7 +33,9 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	navigator.Logger.Info("Running mapper", "indicators", len(indicators))
 	navigator.MapRoutes(path)
 	if runSSA {
+		navigator.Logger.Info("Solving call paths")
 		navigator.SolveCallPaths()
 	}
+	navigator.Logger.Info("Printing results")
 	navigator.PrintResults()
 }

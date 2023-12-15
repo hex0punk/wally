@@ -3,6 +3,7 @@ package wallylib
 import (
 	"errors"
 	"go/ast"
+	"go/build"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/callgraph"
@@ -200,13 +201,18 @@ func (r *RouteMatch) AllPaths(s *callgraph.Node) [][]string {
 func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string) {
 	visited[s] = true
 	if !strings.HasSuffix(s.String(), "$bound") {
-		path = append(path, s.Func.String())
+		if s.Func != nil {
+			path = append(path, s.Func.String())
+		}
 	}
 
-	if len(s.In) == 0 {
+	if len(s.In) == 0 || len(*paths) >= 20 {
 		*paths = append(*paths, path)
 	} else {
 		for _, e := range s.In {
+			if e.Caller != nil && e.Caller.Func != nil && e.Caller.Func.Pkg != nil && build.IsLocalImport(e.Caller.Func.Pkg.Pkg.Path()) {
+				break
+			}
 			if e.Caller != nil && !visited[e.Caller] {
 				r.DFS(e.Caller, visited, path, paths)
 			}
@@ -214,5 +220,10 @@ func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, pa
 	}
 
 	delete(visited, s)
-	path = path[:len(path)-1]
+	//	path = path[:len(path)-1]
+}
+
+func inStd(node *callgraph.Node) bool {
+	pkg, _ := build.Import(node.Func.Pkg.Pkg.Path(), "", 0)
+	return pkg.Goroot
 }
