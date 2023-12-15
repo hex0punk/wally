@@ -200,7 +200,7 @@ func (r *RouteMatch) AllPaths(s *callgraph.Node) [][]string {
 func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string) {
 	visited[s] = true
 	if !strings.HasSuffix(s.String(), "$bound") {
-		path = append(path, s.String())
+		path = append(path, s.Func.String())
 	}
 
 	if len(s.In) == 0 {
