@@ -6,12 +6,15 @@ import (
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/buildssa"
+	"golang.org/x/tools/go/analysis/passes/ctrlflow"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/callgraph"
+	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/go/ssa/ssautil"
 	"log/slog"
 	"os"
 	"wally/checker"
@@ -26,9 +29,16 @@ import (
 
 type Navigator struct {
 	Logger          *slog.Logger
+	SSA             *SSA
 	RouteIndicators []indicator.Indicator
 	RouteMatches    []wallylib.RouteMatch
 	RunSSA          bool
+	Packages        []*packages.Package
+}
+
+type SSA struct {
+	Packages  []*ssa.Package
+	Callgraph *callgraph.Graph
 }
 
 func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
@@ -44,17 +54,28 @@ func (n *Navigator) MapRoutes(path string) {
 	}
 
 	pkgs := LoadPackages(path)
+	n.Packages = pkgs
 
+	if n.RunSSA {
+		n.SSA = &SSA{
+			Packages: []*ssa.Package{},
+		}
+		prog, ssaPkgs := ssautil.AllPackages(pkgs, 0)
+		n.SSA.Packages = ssaPkgs
+		prog.Build()
+		n.SSA.Callgraph = cha.CallGraph(prog)
+	}
+
+	// TODO: No real need to use ctrlflow.Analyzer if using SSA
 	var analyzer = &analysis.Analyzer{
 		Name:     "wally",
 		Doc:      "maps HTTP and RPC routes",
 		Run:      n.Run,
-		Requires: []*analysis.Analyzer{inspect.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
+		Requires: []*analysis.Analyzer{inspect.Analyzer, ctrlflow.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
 	}
 
 	checker := checker.InitChecker(analyzer)
 	// TODO: consider this as part of a checker instead
-
 	results := map[*analysis.Analyzer]interface{}{}
 	for _, pkg := range pkgs {
 		pass := &analysis.Pass{
@@ -74,15 +95,6 @@ func (n *Navigator) MapRoutes(path string) {
 			ExportPackageFact: nil,
 			AllObjectFacts:    nil,
 			AllPackageFacts:   nil,
-		}
-
-		if n.RunSSA {
-			res, err := buildssa.Analyzer.Run(pass)
-			if err != nil {
-				n.Logger.Error("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
-				continue
-			}
-			pass.ResultOf[buildssa.Analyzer] = res
 		}
 
 		for _, a := range analyzer.Requires {
@@ -131,12 +143,9 @@ func LoadPackages(path string) []*packages.Package {
 }
 
 func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
-	var ssaBuild *buildssa.SSA
-	if n.RunSSA {
-		ssaBuild = pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
-	}
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
+	//flow := pass.ResultOf[ctrlflow.Analyzer].(*ctrlflow.CFGs)
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -174,10 +183,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		pos := pass.Fset.Position(funExpr.Pos())
 
 		// Whether we are able to get params or not we have a match
-		match := wallylib.RouteMatch{
-			Indicator: *route,
-			Pos:       pos,
-		}
+		match := wallylib.NewRouteMatch(*route, pos)
 
 		sel, _ := funExpr.(*ast.SelectorExpr)
 
@@ -188,8 +194,12 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 		//Get the enclosing func
 		if n.RunSSA {
-			if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssaBuild); ssaBuild != nil {
-				match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
+			ssapkg := n.SSAPkgFromTypesPackage(funcInfo.Pkg)
+			if ssapkg != nil {
+				if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaFunc != nil {
+					match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
+					match.SSA.EnclosedByFunc = ssaFunc
+				}
 			}
 		} else {
 			if decl := callMapper.EnclosingFunc(ce); decl != nil {
@@ -201,6 +211,41 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	})
 
 	return results, nil
+}
+
+func (n *Navigator) SSAPkgFromTypesPackage(pkg *types.Package) *ssa.Package {
+	for _, rpkg := range n.SSA.Packages {
+		if rpkg.Pkg.String() == pkg.String() {
+			return rpkg
+		}
+	}
+	return nil
+}
+
+// TODO: very slow function as it checks every node, one by one, and whether it has a path
+// to any of the matches. At the moment, not used and only prints results for testing
+func (n *Navigator) SolvePathsSlow() {
+	for _, no := range n.SSA.Callgraph.Nodes {
+		for _, match := range n.RouteMatches {
+			edges := callgraph.PathSearch(no, func(node *callgraph.Node) bool {
+				if node.Func != nil && node.Func == match.SSA.EnclosedByFunc {
+					return true
+				} else {
+					return false
+				}
+			})
+			for _, s := range edges {
+				fmt.Println("PATH IS: ", s.String())
+			}
+		}
+	}
+}
+
+func (n *Navigator) SolveCallPaths() {
+	for i, match := range n.RouteMatches {
+		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
+		n.RouteMatches[i].SSA.CallPaths = match.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc])
+	}
 }
 
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
@@ -227,10 +272,10 @@ func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 	}
 }
 
-func GetEnclosingFuncWithSSA(pass *analysis.Pass, ce *ast.CallExpr, ssaBuild *buildssa.SSA) *ssa.Function {
+func GetEnclosingFuncWithSSA(pass *analysis.Pass, ce *ast.CallExpr, ssaPkg *ssa.Package) *ssa.Function {
 	currentFile := File(pass, ce.Fun.Pos())
 	ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
-	return ssa.EnclosingFunction(ssaBuild.Pkg, ref)
+	return ssa.EnclosingFunction(ssaPkg, ref)
 }
 
 func File(pass *analysis.Pass, pos token.Pos) *ast.File {

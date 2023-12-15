@@ -28,6 +28,12 @@ func init() {
 func mapRoutes(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators(wallyConfig.Indicators)
 	navigator := navigator.NewNavigator(verbose, indicators)
+	navigator.RunSSA = runSSA
+
+	navigator.Logger.Info("Running mapper", "indicators", len(indicators))
 	navigator.MapRoutes(path)
+	if runSSA {
+		navigator.SolveCallPaths()
+	}
 	navigator.PrintResults()
 }

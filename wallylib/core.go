@@ -5,17 +5,19 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/callgraph"
+	"golang.org/x/tools/go/ssa"
+	"strings"
 	"wally/indicator"
 )
 
 type FuncInfo struct {
 	Package   string
+	Pkg       *types.Package
 	Type      string
 	Name      string
 	Route     string
 	Signature *types.Signature
-
-	Co string
 }
 
 type RouteMatch struct {
@@ -24,6 +26,21 @@ type RouteMatch struct {
 	Pos        token.Position
 	Signature  *types.Signature
 	EnclosedBy string
+	SSA        *SSAContext
+}
+
+type SSAContext struct {
+	EnclosedByFunc *ssa.Function
+	Edges          []*callgraph.Edge
+	CallPaths      [][]string
+}
+
+func NewRouteMatch(indicator indicator.Indicator, pos token.Position) RouteMatch {
+	return RouteMatch{
+		Indicator: indicator,
+		Pos:       pos,
+		SSA:       &SSAContext{},
+	}
 }
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
@@ -55,7 +72,7 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 	funcName := GetName(sel.Sel)
 	pkgPath, err := ResolvePackageFromIdent(sel.Sel, info)
 	if err != nil && funcName != "" {
-		// Try to get pkg name from the selector, as hti si likely not a pkg.func
+		// Try to get pkg name from the selector, as this is likely not a pkg.func
 		// but a struct.fun
 		pkgPath, err = ResolvePackageFromIdent(sel.X, info)
 		if err != nil {
@@ -64,7 +81,8 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 	}
 
 	return &FuncInfo{
-		Package: pkgPath,
+		Package: pkgPath.Path(),
+		Pkg:     pkgPath,
 		//Type: nil,
 		Name: funcName,
 	}, nil
@@ -167,4 +185,34 @@ func callExprFromExpr(e ast.Expr) *ast.CallExpr {
 		return e
 	}
 	return nil
+}
+
+func (r *RouteMatch) AllPaths(s *callgraph.Node) [][]string {
+	visited := make(map[*callgraph.Node]bool)
+	paths := [][]string{}
+	path := []string{}
+
+	r.DFS(s, visited, path, &paths)
+
+	return paths
+}
+
+func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string) {
+	visited[s] = true
+	if !strings.HasSuffix(s.String(), "$bound") {
+		path = append(path, s.String())
+	}
+
+	if len(s.In) == 0 {
+		*paths = append(*paths, path)
+	} else {
+		for _, e := range s.In {
+			if e.Caller != nil && !visited[e.Caller] {
+				r.DFS(e.Caller, visited, path, paths)
+			}
+		}
+	}
+
+	delete(visited, s)
+	path = path[:len(path)-1]
 }
