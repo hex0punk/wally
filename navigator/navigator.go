@@ -11,11 +11,14 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/go/callgraph/static"
+	"golang.org/x/tools/go/callgraph"
+	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/go/ssa/ssautil"
 	"log/slog"
 	"os"
+	"strings"
 	"wally/checker"
 	"wally/indicator"
 	"wally/logger"
@@ -27,10 +30,16 @@ import (
 
 type Navigator struct {
 	Logger          *slog.Logger
+	SSA             *SSA
 	RouteIndicators []indicator.Indicator
 	RouteMatches    []wallylib.RouteMatch
 	RunSSA          bool
 	Packages        []*packages.Package
+}
+
+type SSA struct {
+	Packages  []*ssa.Package
+	Callgraph *callgraph.Graph
 }
 
 func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
@@ -47,6 +56,11 @@ func (n *Navigator) MapRoutes(path string) {
 
 	pkgs := LoadPackages(path)
 	n.Packages = pkgs
+
+	prog, ssaPkgs := ssautil.AllPackages(pkgs, 0)
+	n.SSA.Packages = ssaPkgs
+	prog.Build()
+	n.SSA.Callgraph = cha.CallGraph(prog)
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
 	// TODO: Also, add call graph functionality using SSA
@@ -136,10 +150,10 @@ func LoadPackages(path string) []*packages.Package {
 }
 
 func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
-	var ssaBuild *buildssa.SSA
-	if n.RunSSA {
-		ssaBuild = pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
-	}
+	//var ssaBuild *buildssa.SSA
+	//if n.RunSSA {
+	//	ssaBuild = pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
+	//}
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	//callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
 	//flow := pass.ResultOf[ctrlflow.Analyzer].(*ctrlflow.CFGs)
@@ -159,6 +173,10 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		ce, ok := node.(*ast.CallExpr)
+		pos1 := pass.Fset.Position(node.Pos())
+		if strings.Contains(pos1.String(), "operator.go") {
+			fmt.Println("JAMIE: ", pos1.String())
+		}
 		if !ok {
 			return
 		}
@@ -193,130 +211,197 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
 
 		//Get the enclosing func
-		if n.RunSSA {
-			if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssaBuild); ssaBuild != nil {
+		ssapkg := n.PkgToPkg(funcInfo.Pkg)
+		if ssapkg != nil {
+			if ssaFunc := GetEnclosingFuncWithSSATwo(pass, ce, ssapkg); ssaFunc != nil {
 				match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
-
-				res := static.CallGraph(ssaBuild.Pkg.Prog)
-				path := ""
-				for _, f1 := range res.Nodes[ssaFunc].In {
-					// caller of enclosing
-					pos2 := pass.Fset.Position(f1.Pos())
-					path = path + " 1--> " + pos2.String()
-					//for _, f2 := range f1.Caller.In {
-					//	path = path + " --> " + f2.String()
-					//}
-
-					// enclosing of caller
-					pos2 = pass.Fset.Position(f1.Caller.Func.Pos())
-					path = path + " 2--> " + pos2.String()
-
-					for _, f2 := range res.Nodes[f1.Caller.Func].In {
-						pos2 = pass.Fset.Position(f2.Pos())
-						path = path + " 3--> " + f2.String()
-					}
-
-					//f1.Caller.In
-					for _, f2 := range f1.Caller.In {
-						pos2 = pass.Fset.Position(f2.Pos())
-						path = path + " 4--> " + f2.String()
-
-						for _, f3 := range f2.Caller.In {
-							//pos2 = pass.Fset.Position(f2.Pos())
-							path = path + " 5--> " + f3.String()
-						}
-					}
-				}
-
-				//for _, f1 := range res.Nodes[ssaFunc].In {
-				//	fmt.Println("ANODE: ", f1.Description())
-				//}
-
-				//prog, _ := ssautil.AllPackages(n.Packages, 0)
-				//fmt.Println("BUILDING")
-				//prog.Build()
-				//fmt.Println("GRAPHING")
-				//res := static.CallGraph(prog)
-				//fmt.Println("ITER")
-				//for _, f1 := range res.Nodes[ssaFunc].In {
-				//	// caller of enclosing
-				//	pos2 := pass.Fset.Position(f1.Pos())
-				//	path = path + " 1--> " + pos2.String()
-				//	//for _, f2 := range f1.Caller.In {
-				//	//	path = path + " --> " + f2.String()
-				//	//}
-				//
-				//	// enclosing of caller
-				//	pos2 = pass.Fset.Position(f1.Caller.Func.Pos())
-				//	path = path + " 2--> " + pos2.String()
-				//
-				//	for _, f2 := range res.Nodes[f1.Caller.Func].In {
-				//		pos2 = pass.Fset.Position(f2.Pos())
-				//		path = path + " 3--> " + f2.String()
-				//	}
-				//
-				//	//f1.Caller.In
-				//	for _, f2 := range f1.Caller.In {
-				//		pos2 = pass.Fset.Position(f2.Pos())
-				//		path = path + " 4--> " + f2.String()
-				//
-				//		for _, f3 := range f2.Caller.In {
-				//			//pos2 = pass.Fset.Position(f2.Pos())
-				//			path = path + " 5--> " + f3.String()
-				//		}
-				//	}
-				//}
-
-				//for ff, _ := range callgraph.CalleesOf(res.CallGraph.Root) {
-				//	path = path + " --> " + ff.String()
-				//}
-
-				//for _, f1 := range res.CallGraph.Nodes {
-				//	path = path + " --> " + f1.String()
-				//}
-
-				//mains := ssautil.MainPackages([]*ssa.Package{res.CallGraph.Root.Func.Pkg})
-				//if len(mains) > 0 {
-				//	fmt.Println("FOUND MORE")
-				//}
-				//
-				//initT := res.CallGraph.Root.Func.Pkg.Func("main")
-				//if initT != nil {
-				//	fmt.Println("HEREEEE!")
-				//}
-				//res2 := rta.Analyze([]*ssa.Function{initT}, true)
-				//res3 := callgraph.PathSearch(res.CallGraph.Root, func(nn *callgraph.Node) bool {
-				//	if nn.Func == initT {
-				//		return true
-				//	}
-				//	return false
-				//})
-				//
-				//for _, f1 := range res3 {
-				//	path = path + " --> " + f1.String()
-				//}
-				//
-				//for f1, _ := range res.CallGraph. {
-				//	path = path + " --> " + f1.String()
-				//}
-
-				//
-				//if ssaFunc.Parent() != nil {
-				//	path = ssaFunc.Parent().Name() + "canary"
-				//}
-				//
-				//for _, fa := range ssaBuild.SrcFuncs {
-				//	pos2 := pass.Fset.Position(fa.Pos())
-				//	ob := fa.Object()
-				//	switch y := ob.(type) {
-				//	case *types.
-				//	}
-				//	path = path + " --> " + pos2.String()
-				//}
-				match.CallPath = path
-				//			//fmt.Println("OHCRAP:
+				match.EnclosedByFunc = ssaFunc
+				//path := ""
 			}
 		}
+		//if n.RunSSA {
+		//	// TODO: So this is very very likely possible without having to run the build ssa analyzer and instead
+		//	// having our own ssa program and packages as done here. The only think would be to obtain the ssa package that
+		//	// macthes the ast package, then we can use the same func below but no need to pass buildssa and instead
+		//	// we can just pass the ssa.Package
+		//	// That may or may not make the comparing for path finding more reliable
+		//	// Thing is, that might be slowler for just finging the enclosing func if that is all we need from ssa.
+		//	if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssaBuild); ssaBuild != nil {
+		//		match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
+		//		match.EnclosedByFunc = ssaFunc
+		//		path := ""
+		//		//res := static.CallGraph(ssaBuild.Pkg.Prog)
+		//		//path := ""
+		//		//for _, f1 := range res.Nodes[ssaFunc].In {
+		//		//	// caller of enclosing
+		//		//	pos2 := pass.Fset.Position(f1.Pos())
+		//		//	path = path + " 1--> " + pos2.String()
+		//		//	//for _, f2 := range f1.Caller.In {
+		//		//	//	path = path + " --> " + f2.String()
+		//		//	//}
+		//		//
+		//		//	// enclosing of caller
+		//		//	pos2 = pass.Fset.Position(f1.Caller.Func.Pos())
+		//		//	path = path + " 2--> " + pos2.String()
+		//		//
+		//		//	for _, f2 := range res.Nodes[f1.Caller.Func].In {
+		//		//		pos2 = pass.Fset.Position(f2.Pos())
+		//		//		path = path + " 3--> " + f2.String()
+		//		//	}
+		//		//
+		//		//	//f1.Caller.In
+		//		//	for _, f2 := range f1.Caller.In {
+		//		//		pos2 = pass.Fset.Position(f2.Pos())
+		//		//		path = path + " 4--> " + f2.String()
+		//		//
+		//		//		for _, f3 := range f2.Caller.In {
+		//		//			//pos2 = pass.Fset.Position(f2.Pos())
+		//		//			path = path + " 5--> " + f3.String()
+		//		//		}
+		//		//	}
+		//
+		//		//prog, _ := ssautil.AllPackages(n.Packages, 0)
+		//		//fmt.Println("BUILDING")
+		//		//prog.Build()
+		//		//fmt.Println("GRAPHING")
+		//		//res := static.CallGraph(prog)
+		//
+		//		//fmt.Println("checking connections for: ", ssaFunc.String())
+		//		//for _, no := range n.Callgraph.Nodes {
+		//		//	huh := callgraph.PathSearch(no, func(node *callgraph.Node) bool {
+		//		//		if node.Func != nil && node.Func.String() == ssaFunc.String() {
+		//		//			return true
+		//		//		} else {
+		//		//			return false
+		//		//		}
+		//		//	})
+		//		//
+		//		//	for _, s := range huh {
+		//		//		fmt.Println("PATH IS: ", s.String())
+		//		//	}
+		//		//}
+		//
+		//		//fmt.Println("ITER")
+		//		//for _, f1 := range res.Nodes[ssaFunc].In {
+		//		//	// caller of enclosing
+		//		//	pos2 := pass.Fset.Position(f1.Pos())
+		//		//	path = path + " 1--> " + pos2.String()
+		//		//	//for _, f2 := range f1.Caller.In {
+		//		//	//	path = path + " --> " + f2.String()
+		//		//	//}
+		//		//
+		//		//	// enclosing of caller
+		//		//	pos2 = pass.Fset.Position(f1.Caller.Func.Pos())
+		//		//	path = path + " 2--> " + pos2.String()
+		//		//
+		//		//	for _, f2 := range res.Nodes[f1.Caller.Func].In {
+		//		//		pos2 = pass.Fset.Position(f2.Pos())
+		//		//		path = path + " 3--> " + f2.String()
+		//		//	}
+		//		//
+		//		//	//f1.Caller.In
+		//		//	for _, f2 := range f1.Caller.In {
+		//		//		pos2 = pass.Fset.Position(f2.Pos())
+		//		//		path = path + " 4--> " + f2.String()
+		//		//
+		//		//		for _, f3 := range f2.Caller.In {
+		//		//			//pos2 = pass.Fset.Position(f2.Pos())
+		//		//			path = path + " 5--> " + f3.String()
+		//		//		}
+		//		//	}
+		//		//}
+		//		match.CallPaths = path
+		//		//}
+		//
+		//		//for _, f1 := range res.Nodes[ssaFunc].In {
+		//		//	fmt.Println("ANODE: ", f1.Description())
+		//		//}
+		//
+		//		//prog, _ := ssautil.AllPackages(n.Packages, 0)
+		//		//fmt.Println("BUILDING")
+		//		//prog.Build()
+		//		//fmt.Println("GRAPHING")
+		//		//res := static.CallGraph(prog)
+		//		//fmt.Println("ITER")
+		//		//for _, f1 := range res.Nodes[ssaFunc].In {
+		//		//	// caller of enclosing
+		//		//	pos2 := pass.Fset.Position(f1.Pos())
+		//		//	path = path + " 1--> " + pos2.String()
+		//		//	//for _, f2 := range f1.Caller.In {
+		//		//	//	path = path + " --> " + f2.String()
+		//		//	//}
+		//		//
+		//		//	// enclosing of caller
+		//		//	pos2 = pass.Fset.Position(f1.Caller.Func.Pos())
+		//		//	path = path + " 2--> " + pos2.String()
+		//		//
+		//		//	for _, f2 := range res.Nodes[f1.Caller.Func].In {
+		//		//		pos2 = pass.Fset.Position(f2.Pos())
+		//		//		path = path + " 3--> " + f2.String()
+		//		//	}
+		//		//
+		//		//	//f1.Caller.In
+		//		//	for _, f2 := range f1.Caller.In {
+		//		//		pos2 = pass.Fset.Position(f2.Pos())
+		//		//		path = path + " 4--> " + f2.String()
+		//		//
+		//		//		for _, f3 := range f2.Caller.In {
+		//		//			//pos2 = pass.Fset.Position(f2.Pos())
+		//		//			path = path + " 5--> " + f3.String()
+		//		//		}
+		//		//	}
+		//		//}
+		//
+		//		//for ff, _ := range callgraph.CalleesOf(res.CallGraph.Root) {
+		//		//	path = path + " --> " + ff.String()
+		//		//}
+		//
+		//		//for _, f1 := range res.CallGraph.Nodes {
+		//		//	path = path + " --> " + f1.String()
+		//		//}
+		//
+		//		//mains := ssautil.MainPackages([]*ssa.Package{res.CallGraph.Root.Func.Pkg})
+		//		//if len(mains) > 0 {
+		//		//	fmt.Println("FOUND MORE")
+		//		//}
+		//		//
+		//		//initT := res.CallGraph.Root.Func.Pkg.Func("main")
+		//		//if initT != nil {
+		//		//	fmt.Println("HEREEEE!")
+		//		//}
+		//		//res2 := rta.Analyze([]*ssa.Function{initT}, true)
+		//		//res3 := callgraph.PathSearch(res.CallGraph.Root, func(nn *callgraph.Node) bool {
+		//		//	if nn.Func == initT {
+		//		//		return true
+		//		//	}
+		//		//	return false
+		//		//})
+		//		//
+		//		//for _, f1 := range res3 {
+		//		//	path = path + " --> " + f1.String()
+		//		//}
+		//		//
+		//		//for f1, _ := range res.CallGraph. {
+		//		//	path = path + " --> " + f1.String()
+		//		//}
+		//
+		//		//
+		//		//if ssaFunc.Parent() != nil {
+		//		//	path = ssaFunc.Parent().Name() + "canary"
+		//		//}
+		//		//
+		//		//for _, fa := range ssaBuild.SrcFuncs {
+		//		//	pos2 := pass.Fset.Position(fa.Pos())
+		//		//	ob := fa.Object()
+		//		//	switch y := ob.(type) {
+		//		//	case *types.
+		//		//	}
+		//		//	path = path + " --> " + pos2.String()
+		//	}
+		//
+		//	//			//fmt.Println("OHCRAP:
+		//}
+
 		//} else {
 		//	if decl := callMapper.EnclosingFunc(ce); decl != nil {
 		//		match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
@@ -345,7 +430,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		//					}
 		//				}
 		//			}
-		//			match.CallPath = path
+		//			match.CallPaths = path
 		//			//fmt.Println("OHCRAP: ", path)
 		//		}
 		//	}
@@ -355,6 +440,120 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	})
 
 	return results, nil
+}
+
+func (n *Navigator) PkgToPkg(pkg *types.Package) *ssa.Package {
+	for _, rpkg := range n.SSA.Packages {
+		if rpkg.Pkg.String() == pkg.String() {
+			return rpkg
+		}
+	}
+	return nil
+}
+
+func (n *Navigator) SolvePaths(macthes []wallylib.RouteMatch) {
+	//total := len(n.Callgraph.Nodes)
+	for _, no := range n.SSA.Callgraph.Nodes {
+		//if ct == (total / 4)
+		//fmt.Println("checking connections for: ", ssaFunc.String())
+		for _, match := range macthes {
+			huh := callgraph.PathSearch(no, func(node *callgraph.Node) bool {
+				if node.Func != nil && node.Func == match.EnclosedByFunc {
+					return true
+				} else {
+					return false
+				}
+			})
+			for _, s := range huh {
+				fmt.Println("PATH IS: ", s.String())
+			}
+		}
+	}
+}
+
+func (n *Navigator) SolvePathsTwo() {
+	//total := len(n.Callgraph.Nodes)
+
+	for i, match := range n.RouteMatches {
+		fmt.Println("===================DESC FOR: ", match.EnclosedBy)
+		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
+
+		allPaths := match.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc])
+		fmt.Println("THERESIS", len(allPaths))
+		for _, r := range allPaths {
+			fmt.Println("---------THERESIS:", r)
+			for _, r2 := range r {
+				fmt.Println("*************THERESIS", r2)
+			}
+		}
+		res := n.IterThing(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In, nil)
+		//for _, no := range n.Callgraph.Nodes[match.EnclosedByFunc].In {
+		//	fmt.Println("DESC: ", no.String())
+		//	for _, no2 := range no.Caller.In {
+		//		fmt.Println("DESC: ", no2.String())
+		//	}
+		//}
+		n.RouteMatches[i].CallPaths = res
+		fmt.Println()
+	}
+}
+
+//	func (n *Navigator) AllPaths() {
+//		visited := make(map[*callgraph.Node]bool)
+//		paths := [][]string{}
+//		path := []string{}
+//	}
+//
+//	func (n *wallylib.RouteMatch) DFS(s *callgraph.Node, visited map[*Node]bool, path []string, paths *[][]string) {
+//		visited[s] = true
+//		path = append(path, s.name)
+//
+//		if s == nil || s.Func == nil {
+//			*paths = append(*paths, path)
+//		} else {
+//			for _, e := range n.Callgraph.Nodes[match.EnclosedByFunc].In {
+//				if e.source == s && !visited[e.dest] {
+//					g.DFS(e.dest, d, visited, path, paths)
+//				}
+//			}
+//		}
+//
+//		delete(visited, s)
+//		path = path[:len(path)-1]
+//	}
+func (n *Navigator) IterThing(edges []*callgraph.Edge, res []string) [][]string {
+	//total := len(n.Callgraph.Nodes)
+	var total [][]string
+	for _, no := range edges {
+		//path := ""
+		if no == nil {
+			break
+		}
+		fmt.Printf("DESC: %s {{%s}}\n", no.Site.Parent().String(), no.String())
+		res = append(res, no.Site.Parent().String())
+		n.IterThing(no.Caller.In, res)
+		total = append(total, res)
+		//if i <= len(edges) {
+		//	n.IterThing(no.Caller.In, res)
+		//} else {
+		//	total = append(total, res)
+		//}
+
+		//for _, i := range interPath {
+		//	path = path + i
+		//}
+		//paths = append(paths, path)
+		fmt.Println("-------------------------DESC END-----------------------")
+
+		//for _, no2 := range no.Caller.In {
+		//	fmt.Println("DESC: ", no2.String())
+		//}
+	}
+	fmt.Println("-------------------------DESC BY BY-----------------------", len(total))
+	for _, to := range total {
+		fmt.Println("GOTTED", to[0])
+	}
+	return total
 }
 
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
@@ -385,6 +584,12 @@ func GetEnclosingFuncWithSSA(pass *analysis.Pass, ce *ast.CallExpr, ssaBuild *bu
 	currentFile := File(pass, ce.Fun.Pos())
 	ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
 	return ssa.EnclosingFunction(ssaBuild.Pkg, ref)
+}
+
+func GetEnclosingFuncWithSSATwo(pass *analysis.Pass, ce *ast.CallExpr, ssaPkg *ssa.Package) *ssa.Function {
+	currentFile := File(pass, ce.Fun.Pos())
+	ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
+	return ssa.EnclosingFunction(ssaPkg, ref)
 }
 
 func File(pass *analysis.Pass, pos token.Pos) *ast.File {

@@ -48,6 +48,15 @@ func InitIndicators() []Indicator {
 			IndicatorType: Caller,
 		},
 		{
+			Package:  "github.com/hashicorp/nomad/api",
+			Type:     "",
+			Function: "query",
+			Params: []RouteParam{
+				{Name: "endpoint"},
+			},
+			IndicatorType: Caller,
+		},
+		{
 			Package:  "net/http",
 			Type:     "",
 			Function: "Handle",
