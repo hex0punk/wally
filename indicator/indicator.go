@@ -1,5 +1,7 @@
 package indicator
 
+import "fmt"
+
 type IndicatorType int
 
 const (
@@ -27,35 +29,23 @@ type RouteParam struct {
 	Pos  int    `yaml:"pos"`
 }
 
-func InitIndicators() []Indicator {
+func InitIndicators(customIndicators []Indicator) []Indicator {
+	indicators := getStockIndicators()
+	if customIndicators != nil && len(customIndicators) > 0 {
+		fmt.Println("Loading custom indicator")
+		for _, ind := range customIndicators {
+			indCpy := ind
+			fmt.Println("Pkg: ", indCpy.Package)
+			fmt.Println("Func: ", indCpy.Function)
+			fmt.Println()
+			indicators = append(indicators, indCpy)
+		}
+	}
+	return indicators
+}
+
+func getStockIndicators() []Indicator {
 	return []Indicator{
-		{
-			Package:  "github.com/hashicorp/nomad/nomad",
-			Type:     "",
-			Function: "forward",
-			Params: []RouteParam{
-				{Name: "method"},
-			},
-			IndicatorType: Caller,
-		},
-		{
-			Package:  "github.com/hashicorp/nomad/command/agent",
-			Type:     "",
-			Function: "RPC",
-			Params: []RouteParam{
-				{Pos: 0},
-			},
-			IndicatorType: Caller,
-		},
-		{
-			Package:  "github.com/hashicorp/nomad/api",
-			Type:     "",
-			Function: "query",
-			Params: []RouteParam{
-				{Name: "endpoint"},
-			},
-			IndicatorType: Caller,
-		},
 		{
 			Package:  "net/http",
 			Type:     "",
@@ -65,11 +55,5 @@ func InitIndicators() []Indicator {
 			},
 			IndicatorType: Service,
 		},
-		//{
-		//	Package:        "*",
-		//	Type:           "",
-		//	Function:       "Register",
-		//	RouteParamName: "pattern",
-		//},
 	}
 }
