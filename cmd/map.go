@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"github.com/spf13/cobra"
 	"wally/indicator"
 	"wally/navigator"
@@ -28,11 +27,13 @@ func init() {
 
 func mapRoutes(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators()
-	fmt.Println("running with %d indicators", len(indicators))
 	navigator := navigator.NewNavigator(verbose, indicators)
 	navigator.RunSSA = runSSA
-	navigator.MapRoutes(path)
 
-	navigator.SolvePathsTwo()
+	navigator.Logger.Info("Running mapper", "indicators", len(indicators))
+	navigator.MapRoutes(path)
+	if runSSA {
+		navigator.SolveCallPaths()
+	}
 	navigator.PrintResults()
 }

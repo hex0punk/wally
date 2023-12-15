@@ -2,7 +2,6 @@ package wallylib
 
 import (
 	"errors"
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -36,6 +35,14 @@ type SSAContext struct {
 	CallPaths      [][]string
 }
 
+func NewRouteMatch(indicator indicator.Indicator, pos token.Position) RouteMatch {
+	return RouteMatch{
+		Indicator: indicator,
+		Pos:       pos,
+		SSA:       &SSAContext{},
+	}
+}
+
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
 	var match *indicator.Indicator
 	for _, ind := range indicators {
@@ -64,18 +71,10 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 
 	funcName := GetName(sel.Sel)
 	pkgPath, err := ResolvePackageFromIdent(sel.Sel, info)
-	if pkgPath != nil && pkgPath.String() == "package api (\"github.com/hashicorp/nomad/api\")" {
-		//fmt.Println("FOUND PKG: ", pkgPath)
-		fmt.Println("FOUND PKG HERE: ", funcName)
-	}
 	if err != nil && funcName != "" {
-		// Try to get pkg name from the selector, as hti si likely not a pkg.func
+		// Try to get pkg name from the selector, as this is likely not a pkg.func
 		// but a struct.fun
 		pkgPath, err = ResolvePackageFromIdent(sel.X, info)
-		if pkgPath != nil && pkgPath.String() == "package api (\"github.com/hashicorp/nomad/api\")" {
-			//fmt.Println("FOUND PKG: ", pkgPath)
-			fmt.Println("FOUND PKG THERE: ", sel.X)
-		}
 		if err != nil {
 			return nil, err
 		}
@@ -215,5 +214,5 @@ func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, pa
 	}
 
 	delete(visited, s)
-	//path = path[:len(path)-1]
+	path = path[:len(path)-1]
 }
