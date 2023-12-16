@@ -125,11 +125,17 @@ In the future, Wally will be able to make educated guesses for potential HTTP or
 
 At its core Wally is basically a function mapper. You can define functions in configuration files that have nothing to do with HTTP or RPC routes to obtain the same information that is described here.
 
-### Logging
+## Logging
 
 You can add logging statements as needed during development in any function with a `Navigator` receiver like this: `n.Logger.Debug("your message", "a key", "a value")`.
 
-### Experiments
+## I am seeing duplicate call stack paths in ssa mode
 
-Right now there is only one route indicator setup in analysis.go. You can add more as needed to test how `wally` behaves, then write code if you do not see the expected results. Just add another `RouteIndicator` to the `InitIndicators` function that includes the type of function you want `wally` to detect for you.
+At the moment, wally will often give you duplicate stack paths, where you'd notice a path of, say, A->B->C is repeated a couple of times or more. Based on my testing and debugging this is a drawback of the [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.16.1/go/callgraph/cha) algorithm from Go's `callgraph` package, which  wally uses for the call stack path functionality. I am experimenting with other available algorithms in `go/callgraph/` to determine what the best option to minimize such issues (while getting accurate call stacks) could be and will update wally's code accordingly. In the case that we stick to the `cha` algorithm, I will write code to filter duplicates. 
+
+## Contributing
+
+Feel free to open issues and send PRs.
+
+
 
