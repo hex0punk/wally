@@ -197,10 +197,10 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 		//Get the enclosing func
 		if n.RunSSA {
-			ssapkg := n.SSAPkgFromTypesPackage(funcInfo.Pkg)
+			ssapkg := n.SSAPkgFromTypesPackage(pass.Pkg)
 			if ssapkg != nil {
 				if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaFunc != nil {
-					match.EnclosedBy = fmt.Sprintf("%s.%s", ssaFunc.Pkg.String(), ssaFunc.Name())
+					match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaFunc.Name())
 					match.SSA.EnclosedByFunc = ssaFunc
 				}
 			}
@@ -244,10 +244,10 @@ func (n *Navigator) SolvePathsSlow() {
 	}
 }
 
-func (n *Navigator) SolveCallPaths() {
+func (n *Navigator) SolveCallPaths(filter string) {
 	for i, match := range n.RouteMatches {
 		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
-		n.RouteMatches[i].SSA.CallPaths = match.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc])
+		n.RouteMatches[i].SSA.CallPaths = match.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], filter)
 	}
 }
 

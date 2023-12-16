@@ -9,6 +9,7 @@ import (
 var (
 	path   string
 	runSSA bool
+	filter string
 )
 
 // mapCmd represents the map command
@@ -23,6 +24,7 @@ func init() {
 	rootCmd.AddCommand(mapCmd)
 	mapCmd.PersistentFlags().StringVarP(&path, "path", "p", "", "The package to target")
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
+	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
@@ -34,7 +36,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	navigator.MapRoutes(path)
 	if runSSA {
 		navigator.Logger.Info("Solving call paths")
-		navigator.SolveCallPaths()
+		navigator.SolveCallPaths(filter)
 	}
 	navigator.Logger.Info("Printing results")
 	navigator.PrintResults()

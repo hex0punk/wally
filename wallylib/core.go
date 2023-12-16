@@ -188,39 +188,50 @@ func callExprFromExpr(e ast.Expr) *ast.CallExpr {
 	return nil
 }
 
-func (r *RouteMatch) AllPaths(s *callgraph.Node) [][]string {
+func (r *RouteMatch) AllPaths(s *callgraph.Node, filter string) [][]string {
 	visited := make(map[*callgraph.Node]bool)
 	paths := [][]string{}
 	path := []string{}
 
-	r.DFS(s, visited, path, &paths)
+	r.DFS(s, visited, path, &paths, filter)
 
 	return paths
 }
 
-func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string) {
+func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string, filter string) {
 	visited[s] = true
 	if !strings.HasSuffix(s.String(), "$bound") {
 		if s.Func != nil {
-			path = append(path, s.Func.String())
+			path = append(path, s.String())
 		}
 	}
 
-	if len(s.In) == 0 || len(*paths) >= 20 {
+	if len(s.In) == 0 {
 		*paths = append(*paths, path)
 	} else {
 		for _, e := range s.In {
-			if e.Caller != nil && e.Caller.Func != nil && e.Caller.Func.Pkg != nil && build.IsLocalImport(e.Caller.Func.Pkg.Pkg.Path()) {
-				break
+			if filter != "" && e.Caller != nil {
+				if !passesFilter(e.Caller, filter) {
+					delete(visited, s)
+					*paths = append(*paths, path)
+					return
+				}
 			}
 			if e.Caller != nil && !visited[e.Caller] {
-				r.DFS(e.Caller, visited, path, paths)
+				r.DFS(e.Caller, visited, path, paths, filter)
 			}
 		}
 	}
 
 	delete(visited, s)
-	//	path = path[:len(path)-1]
+	//path = path[:len(path)-1]
+}
+
+func passesFilter(node *callgraph.Node, filter string) bool {
+	if node.Func != nil && node.Func.Pkg != nil {
+		return strings.HasPrefix(node.Func.Pkg.Pkg.Path(), filter)
+	}
+	return false
 }
 
 func inStd(node *callgraph.Node) bool {
