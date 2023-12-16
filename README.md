@@ -8,6 +8,23 @@ Static analysis tool for detecting and mapping RPC and HTTP routes in Go code.
 
 Because [Wally](https://monkeyisland.fandom.com/wiki/Wally_B._Feed) is a catographer, I like Monkey Island, and I wanted it to be called that :).
 
+## Why not just grep instead?
+
+So you are analyzing a Go-based application and you need to find all HTTP and RPC routes. You can run grep or ripgrep to find specific patterns that'd point you to routes in the code but 
+
+1. You'd need to parse through a lot of unnecessary strings
+2. You may end up with functions that are similar to those you are targeting but have nothing to do with HTTP or RPC.
+3. Grep won't solve constant values that indicate methods and route paths.
+
+## What can Wally do that grep can't?
+
+Wally currently supports the following features:
+
+- Discover HTTP client calls and route listeners in your code by looking at each function name, signature, and package to make sure it finds the functions that you actually care about.
+- Wally solves the value of compile-time constant values that may be used in the functions of interest. Wally does a pretty good job at finding constants and global variables and resolving their values for you so you don't have to chase those manually in code.
+- Wally will report the enclosing function where the function of interest is called.
+- Wally will also give you all possible call paths to your functions of interest. This can be useful when analyzing monorepos where service A calls service B via a client function declared in service B's packages. This feature requires that the target code base is buildable. 
+
 ## Wally configurations
 
 Wally needs a bit of hand-holding. Though it can also do a pretty good job at guessing paths, it helps a lot if you tell it the packages and functions to look for, along with the parameters that you are hoping to discover and map. So, to help Wally do the job you can specify a configuration file in YAML that defines a set of indicators. 
@@ -40,7 +57,6 @@ indicators:
 Note that you can specify the parameter that you want Wally to attempt to solve the value to. If you don't know the name of the parameter (per the function signature), you can give it the position in the signature. You can then use the `--config` or `-c` flag along with the path to the configuration file.
 
 
-
 ## How can I play with it?
 
 A good test project to run it against is [nomad](https://github.com/hashicorp/nomad) because it has a lot of routes set up and called all over the place. I suggest the following:
@@ -58,9 +74,56 @@ $ <path/to/wally/wally> map -p ./... -vvv
 
 ## Wally's fanciest features
 
-Wally should work even if you are not able to build the project you want to run it against. However, if you are able to build the project without any issues, you can run wally using the `--ssa` flag, at which point Wally will be able to do the following:
+Wally should work even if you are not able to build the project you want to run it against. However, if you can build the project without any issues, you can run wally using the `--ssa` flag, at which point Wally will be able to do the following:
 
+- Solve the enclosing function more effectively using [SSA](https://pkg.go.dev/golang.org/x/tools/go/ssa).
+- Output all possible call paths to the functions where the routes are defined and/or called.
 
+When using the `--ssa` flag you can expect output like this:
+
+```shell
+===========MATCH===============
+Package:  net/http
+Function:  Handle
+Params:
+	pattern: "/v1/client/metadata"
+Enclosed by:  agent.registerHandlers
+Position /Users/hex0punk/Tests/nomad/command/agent/http.go:444
+Possible Paths: 6
+	Path 1:
+		n105973:(*github.com/hashicorp/nomad/command/agent.Command).Run --->
+		n24048:(*github.com/hashicorp/nomad/command/agent.Command).setupAgent --->
+		n24050:github.com/hashicorp/nomad/command/agent.NewHTTPServers --->
+		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
+	Path 2:
+		n104203:github.com/hashicorp/nomad/command/agent.NewTestAgent --->
+		n92695:(*github.com/hashicorp/nomad/command/agent.TestAgent).Start --->
+		n32861:(*github.com/hashicorp/nomad/command/agent.TestAgent).start --->
+		n24050:github.com/hashicorp/nomad/command/agent.NewHTTPServers --->
+		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
+	Path 3:
+		n105973:(*github.com/hashicorp/nomad/command/agent.Command).Run --->
+		n117415:(*github.com/hashicorp/nomad/command/agent.Command).handleSignals --->
+		n79534:(*github.com/hashicorp/nomad/command/agent.Command).handleReload --->
+		n79544:(*github.com/hashicorp/nomad/command/agent.Command).reloadHTTPServer --->
+		n24050:github.com/hashicorp/nomad/command/agent.NewHTTPServers --->
+		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
+```
+
+**NOTE: This is very important if you want to use the `ssa` call mapper feature described above**. When running wally in ssa mode against large code bases, you'd want to tell it to limit it's call path mapping work to only packages in the `module` of the code base you are running it against. For instance, going back to the nomad example, you'd want to run wally like so:
+
+```shell
+$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/"
+```
+Where `-f` defines a filter for the call stack search function. If you don't do this, wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests. 
+
+## Guesser mode
+
+In the future, Wally will be able to make educated guesses for potential HTTP or RPC routes with no additional indicators. For now, you can define indicators with a wild flag package (`"*"`) if you are not able (or don't want) to tell Wally which package each function may be coming from.
+
+## The power of Wally
+
+At its core Wally is basically a function mapper. You can define functions in configuration files that have nothing to do with HTTP or RPC routes to obtain the same information that is described here.
 
 ### Logging
 
