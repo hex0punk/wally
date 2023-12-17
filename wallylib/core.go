@@ -210,6 +210,11 @@ func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, pa
 		*paths = append(*paths, path)
 	} else {
 		for _, e := range s.In {
+			if len(*paths) >= 10 {
+				delete(visited, s)
+				*paths = append(*paths, path)
+				return
+			}
 			if filter != "" && e.Caller != nil {
 				if !passesFilter(e.Caller, filter) {
 					delete(visited, s)

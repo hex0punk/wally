@@ -191,7 +191,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		sel, _ := funExpr.(*ast.SelectorExpr)
 
 		sig, _ := wallylib.GetFuncSignature(sel.Sel, pass.TypesInfo)
-		n.Logger.Debug("Checking for pos", "pos", pos.String())
 		// Now try to get the params for methods, path, etc.
 		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
 
