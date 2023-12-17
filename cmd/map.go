@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 	"wally/indicator"
 	"wally/navigator"
+	"wally/reporter"
 )
 
 var (
@@ -40,4 +41,6 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	}
 	navigator.Logger.Info("Printing results")
 	navigator.PrintResults()
+
+	reporter.GenerateGraph(navigator.RouteMatches)
 }
