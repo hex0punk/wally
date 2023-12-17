@@ -11,6 +11,7 @@ var (
 	path   string
 	runSSA bool
 	filter string
+	graph  string
 )
 
 // mapCmd represents the map command
@@ -24,6 +25,7 @@ var mapCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(mapCmd)
 	mapCmd.PersistentFlags().StringVarP(&path, "path", "p", "", "The package to target")
+	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
 }
@@ -42,5 +44,9 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	navigator.Logger.Info("Printing results")
 	navigator.PrintResults()
 
-	reporter.GenerateGraph(navigator.RouteMatches)
+	if runSSA && graph != "" {
+		navigator.Logger.Info("Generating graph", "graph filename", graph)
+		reporter.GenerateGraph(navigator.RouteMatches, graph)
+	}
+
 }

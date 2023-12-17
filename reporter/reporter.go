@@ -47,7 +47,7 @@ func PrintMach(match wallylib.RouteMatch) {
 	fmt.Println()
 }
 
-func GenerateGraph(matches []wallylib.RouteMatch) {
+func GenerateGraph(matches []wallylib.RouteMatch, path string) {
 	g := graphviz.New()
 	graph, err := g.Graph()
 	if err != nil {
@@ -58,17 +58,9 @@ func GenerateGraph(matches []wallylib.RouteMatch) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		//e, err := graph.CreateNode(match.SSA.EnclosedByFunc.String())
-		//if err != nil {
-		//	log.Fatal(err)
-		//}
-		//_, err = graph.CreateEdge("e", m, e)
-		//if err != nil {
-		//	log.Fatal(err)
-		//}
-		//graph.CreateNode(match.Indicator.Package + "." + match.SSA.EnclosedByFunc.String())
+		m = m.SetColor("red").SetFillColor("blue").SetShape("diamond")
+
 		for _, paths := range match.SSA.CallPaths {
-			//graph.CreateNode(path)
 			var prev *cgraph.Node
 			for i := 0; i < len(paths); i++ {
 				if i == 0 {
@@ -76,7 +68,7 @@ func GenerateGraph(matches []wallylib.RouteMatch) {
 					if err != nil {
 						log.Fatal(err)
 					}
-					_, err = graph.CreateEdge("e", m, prev)
+					_, err = graph.CreateEdge("e", prev, m)
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -85,57 +77,22 @@ func GenerateGraph(matches []wallylib.RouteMatch) {
 					if err != nil {
 						log.Fatal(err)
 					}
-					_, err = graph.CreateEdge("e", prev, newNode)
+					_, err = graph.CreateEdge("e", newNode, prev)
 					if err != nil {
 						log.Fatal(err)
 					}
 					prev = newNode
 				}
 			}
-			//for i, path := range paths {
-			//	n, err := graph.CreateNode(path)
-			//	if err != nil {
-			//		log.Fatal(err)
-			//	}
-			//}
 		}
 	}
 
-	//defer func() {
-	//	if err := graph.Close(); err != nil {
-	//		log.Fatal(err)
-	//	}
-	//	g.Close()
-	//}()
-	//n, err := graph.CreateNode("n")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//m, err := graph.CreateNode("m")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//graph.CreateNode("m")
-	//graph.CreateNode("m")
-	//graph.CreateNode("t")
-	//e, err := graph.CreateEdge("e", n, m)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//graph.CreateEdge("e", n, m)
-	//e.SetLabel("e")
 	var buf bytes.Buffer
 	if err := g.Render(graph, graphviz.PNG, &buf); err != nil {
 		log.Fatal(err)
 	}
-	// 2. get as image.Image instance
-	//image, err := g.RenderImage(graph)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
 
-	// 3. write to file directly
-	if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
+	if err := g.RenderFilename(graph, graphviz.PNG, path); err != nil {
 		log.Fatal(err)
 	}
 }
