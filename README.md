@@ -119,7 +119,14 @@ Where `-f` defines a filter for the call stack search function. If you don't do 
 
 ### PNG Graph output 
 
-When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG containing a graphviz base graph of the call stacks. 
+When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG containing a graphviz base graph of the call stacks. For example, running:
+
+```shell
+$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -g ./mygraph.png
+```
+From _nomad/command/agent_ will output this graph:
+
+![](graphsample.png)
 
 ## Guesser mode
 
@@ -131,14 +138,7 @@ At its core Wally is basically a function mapper. You can define functions in co
 
 ## Logging
 
-You can add logging statements as needed during development in any function with a `Navigator` receiver like this: `n.Logger.Debug("your message", "a key", "a value")`. For example, running:
-
-```shell
-$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -g ./mygraph.png
-```
-From _nomad/command/agent_ will output this graph:
-
-![](graphsample.png)
+You can add logging statements as needed during development in any function with a `Navigator` receiver like this: `n.Logger.Debug("your message", "a key", "a value")`.
 
 ## I am seeing duplicate call stack paths in ssa mode
 
