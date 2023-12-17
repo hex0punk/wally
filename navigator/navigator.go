@@ -217,7 +217,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 func (n *Navigator) SSAPkgFromTypesPackage(pkg *types.Package) *ssa.Package {
 	for _, rpkg := range n.SSA.Packages {
-		if rpkg.Pkg.String() == pkg.String() {
+		if rpkg != nil && rpkg.Pkg != nil && rpkg.Pkg.String() == pkg.String() {
 			return rpkg
 		}
 	}

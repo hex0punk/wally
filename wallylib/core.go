@@ -195,7 +195,50 @@ func (r *RouteMatch) AllPaths(s *callgraph.Node, filter string, recLimit int) []
 
 	r.DFS(s, visited, path, &paths, filter, recLimit)
 
-	return paths
+	// TODO: We have to do this given that the cha callgraph algorithm seems to return duplicate paths at times.
+	// I need to test other algorithms available to see if I get better results (without duplicate paths)
+	res := dedupPaths(paths)
+
+	return res
+}
+
+// TODO: this can be a generic function for deduping slices of slices
+// and moved to a different package
+func dedupPaths(paths [][]string) [][]string {
+	var uniquePaths [][]string
+	for x := range paths {
+		match := true
+		for y := range paths {
+			if x == y {
+				uniquePaths = append(uniquePaths, paths[x])
+				continue
+			}
+			if (equal(paths[x], paths[y])) == false {
+				match = false
+			} else {
+				match = true
+				break
+			}
+		}
+		if match == false {
+			uniquePaths = append(paths, paths[x])
+			//match = false
+		}
+	}
+	return uniquePaths
+}
+
+// TODO: Move this to a more general use package
+func equal(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, x := range a {
+		if x != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string, filter string, recLimit int) {

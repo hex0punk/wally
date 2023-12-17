@@ -122,9 +122,9 @@ Where `-f` defines a filter for the call stack search function. If you don't do 
 
 If using `-f` is not enough and you are seeing wally taking a very long time in the "solving call paths" step, wally may have encountered some sort or recursive call. In that case, you can use `-l` and an integer to limit the number of recursive calls wally makes when mapping call paths. This will limit the paths you see in the output, but using a high enough number should return helpful paths still. Experiment with `-l`, `-f`, or both to get the results you need or expect.
 
-### PNG Graph output 
+### PNG and XDOT Graph output 
 
-When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG containing a graphviz base graph of the call stacks. For example, running:
+When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG or XDOT containing a graphviz base graph of the call stacks. For example, running:
 
 ```shell
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -g ./mygraph.png
@@ -132,6 +132,8 @@ $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -g ./mygraph.pn
 From _nomad/command/agent_ will output this graph:
 
 ![](graphsample.png)
+
+Specifying a filename with a `.xdot` extention will create an [xdot](https://graphviz.org/docs/outputs/canon/#xdot) file instead.
 
 ## Guesser mode
 
@@ -148,6 +150,8 @@ You can add logging statements as needed during development in any function with
 ## I am seeing duplicate call stack paths in ssa mode
 
 At the moment, wally will often give you duplicate stack paths, where you'd notice a path of, say, A->B->C is repeated a couple of times or more. Based on my testing and debugging this is a drawback of the [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.16.1/go/callgraph/cha) algorithm from Go's `callgraph` package, which  wally uses for the call stack path functionality. I am experimenting with other available algorithms in `go/callgraph/` to determine what the best option to minimize such issues (while getting accurate call stacks) could be and will update wally's code accordingly. In the case that we stick to the `cha` algorithm, I will write code to filter duplicates. 
+
+_Update:_ You should not be seeing any duplicates as I added a function to remove those. However, this adds more work to wally, so part of the future work still includes testing other callgraph algorithms thoroughly.
 
 ## Contributing
 

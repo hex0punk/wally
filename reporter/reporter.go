@@ -1,11 +1,11 @@
 package reporter
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
 	"log"
+	"strings"
 	"wally/wallylib"
 )
 
@@ -47,6 +47,7 @@ func PrintMach(match wallylib.RouteMatch) {
 	fmt.Println()
 }
 
+// TODO: Move this to a new package dedicated to graphing, or in this same package but in a separate file
 func GenerateGraph(matches []wallylib.RouteMatch, path string) {
 	g := graphviz.New()
 	graph, err := g.Graph()
@@ -68,7 +69,7 @@ func GenerateGraph(matches []wallylib.RouteMatch, path string) {
 					if err != nil {
 						log.Fatal(err)
 					}
-					_, err = graph.CreateEdge("e", prev, m)
+					_, err := graph.CreateEdge("", prev, m)
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -87,12 +88,13 @@ func GenerateGraph(matches []wallylib.RouteMatch, path string) {
 		}
 	}
 
-	var buf bytes.Buffer
-	if err := g.Render(graph, graphviz.PNG, &buf); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := g.RenderFilename(graph, graphviz.PNG, path); err != nil {
-		log.Fatal(err)
+	if strings.HasSuffix(path, ".png") {
+		if err := g.RenderFilename(graph, graphviz.PNG, path); err != nil {
+			log.Fatal(err)
+		}
+	} else if strings.HasSuffix(path, ".xdot") {
+		if err := g.RenderFilename(graph, graphviz.XDOT, path); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
