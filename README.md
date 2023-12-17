@@ -4,11 +4,13 @@
 
 Static analysis tool for detecting and mapping RPC and HTTP routes in Go code.
 
-## Why is it called wally?
+## The basics
+
+### Why is it called wally?
 
 Because [Wally](https://monkeyisland.fandom.com/wiki/Wally_B._Feed) is a catographer, I like Monkey Island, and I wanted it to be called that :).
 
-## Why not just grep instead?
+### Why not just grep instead?
 
 So you are analyzing a Go-based application and you need to find all HTTP and RPC routes. You can run grep or ripgrep to find specific patterns that'd point you to routes in the code but 
 
@@ -16,7 +18,7 @@ So you are analyzing a Go-based application and you need to find all HTTP and RP
 2. You may end up with functions that are similar to those you are targeting but have nothing to do with HTTP or RPC.
 3. Grep won't solve constant values that indicate methods and route paths.
 
-## What can Wally do that grep can't?
+### What can Wally do that grep can't?
 
 Wally currently supports the following features:
 
@@ -26,11 +28,21 @@ Wally currently supports the following features:
 - Wally will also give you all possible call paths to your functions of interest. This can be useful when analyzing monorepos where service A calls service B via a client function declared in service B's packages. This feature requires that the target code base is buildable.
 - Wally will output a nice PNG graph of the call stacks for the different routes it finds.
 
+### Use case example
+
+You are conducting analysis of a monorepo containing multiple microservices. Often times, these sort of projects relly heavily on gRPC, which generates code for setting up gRPC routes via functions that call [`Invoke`](https://pkg.go.dev/google.golang.org/grpc#Invoke). Other services can then use these functions to call each other. 
+
+One of the built-in indicators in `wally` will allow it to find functions that call `Invoke` for gRPC routes, so you can get a nice list of all gRPC method calls for all your microservices. Further, with `--ssa` you can also map the chains of methods gRPC calls nessesary to reach any given gRPC route. With `wally` you can them answer:
+
+- Can users reach service `Y` hoested internally via service `A` hosted externally?
+- Which service would I have to intialize a call to send user input to service `X`?
+- What functions are there between service `A` and service `Y` that might sanitize or modify the input set to service `A`?
+
 ## Wally configurations
 
 Wally needs a bit of hand-holding. Though it can also do a pretty good job at guessing paths, it helps a lot if you tell it the packages and functions to look for, along with the parameters that you are hoping to discover and map. So, to help Wally do the job you can specify a configuration file in YAML that defines a set of indicators. 
 
-Wally runs a number of `indicators` which are basically clues as to whether a function in code may be related to a gRPC or HTTP route. However, sometimes a code base may have custom methods for setting up HTTP routes or for calling HTTP and RPC services. For instance, when reviewing Nomad, you can give Wally the following configuration file with Nomad specific indicators:
+Wally runs a number of `indicators` which are basically clues as to whether a function in code may be related to a gRPC or HTTP route. By default, `wally` has a number of built-in `indicators` which check for common ways to set up and call HTTP and RPC methods using standard and popular libraries. However, sometimes a code base may have custom methods for setting up HTTP routes or for calling HTTP and RPC services. For instance, when reviewing Nomad, you can give Wally the following configuration file with Nomad specific indicators:
 
 ```yaml
 indicators:

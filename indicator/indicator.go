@@ -55,5 +55,14 @@ func getStockIndicators() []Indicator {
 			},
 			IndicatorType: Service,
 		},
+		{
+			Package:  "google.golang.org/grpc",
+			Type:     "",
+			Function: "Invoke",
+			Params: []RouteParam{
+				{Name: "method"},
+			},
+			IndicatorType: Service,
+		},
 	}
 }
