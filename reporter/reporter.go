@@ -1,7 +1,11 @@
 package reporter
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/goccy/go-graphviz"
+	"github.com/goccy/go-graphviz/cgraph"
+	"log"
 	"wally/wallylib"
 )
 
@@ -41,4 +45,54 @@ func PrintMach(match wallylib.RouteMatch) {
 		}
 	}
 	fmt.Println()
+}
+
+func GenerateGraph(matches []wallylib.RouteMatch, path string) {
+	g := graphviz.New()
+	graph, err := g.Graph()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, match := range matches {
+		m, err := graph.CreateNode(match.Indicator.Package + "." + match.Indicator.Function)
+		if err != nil {
+			log.Fatal(err)
+		}
+		m = m.SetColor("red").SetFillColor("blue").SetShape("diamond")
+
+		for _, paths := range match.SSA.CallPaths {
+			var prev *cgraph.Node
+			for i := 0; i < len(paths); i++ {
+				if i == 0 {
+					prev, err = graph.CreateNode(paths[i])
+					if err != nil {
+						log.Fatal(err)
+					}
+					_, err = graph.CreateEdge("e", prev, m)
+					if err != nil {
+						log.Fatal(err)
+					}
+				} else {
+					newNode, err := graph.CreateNode(paths[i])
+					if err != nil {
+						log.Fatal(err)
+					}
+					_, err = graph.CreateEdge("e", newNode, prev)
+					if err != nil {
+						log.Fatal(err)
+					}
+					prev = newNode
+				}
+			}
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := g.Render(graph, graphviz.PNG, &buf); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := g.RenderFilename(graph, graphviz.PNG, path); err != nil {
+		log.Fatal(err)
+	}
 }
