@@ -188,17 +188,17 @@ func callExprFromExpr(e ast.Expr) *ast.CallExpr {
 	return nil
 }
 
-func (r *RouteMatch) AllPaths(s *callgraph.Node, filter string) [][]string {
+func (r *RouteMatch) AllPaths(s *callgraph.Node, filter string, recLimit int) [][]string {
 	visited := make(map[*callgraph.Node]bool)
 	paths := [][]string{}
 	path := []string{}
 
-	r.DFS(s, visited, path, &paths, filter)
+	r.DFS(s, visited, path, &paths, filter, recLimit)
 
 	return paths
 }
 
-func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string, filter string) {
+func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string, filter string, recLimit int) {
 	visited[s] = true
 	if !strings.HasSuffix(s.String(), "$bound") {
 		if s.Func != nil {
@@ -210,7 +210,7 @@ func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, pa
 		*paths = append(*paths, path)
 	} else {
 		for _, e := range s.In {
-			if len(*paths) >= 10 {
+			if recLimit > 0 && len(*paths) >= recLimit {
 				delete(visited, s)
 				*paths = append(*paths, path)
 				return
@@ -223,7 +223,7 @@ func (r *RouteMatch) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, pa
 				}
 			}
 			if e.Caller != nil && !visited[e.Caller] {
-				r.DFS(e.Caller, visited, path, paths, filter)
+				r.DFS(e.Caller, visited, path, paths, filter, recLimit)
 			}
 		}
 	}

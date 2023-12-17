@@ -243,10 +243,10 @@ func (n *Navigator) SolvePathsSlow() {
 	}
 }
 
-func (n *Navigator) SolveCallPaths(filter string) {
+func (n *Navigator) SolveCallPaths(filter string, recLimit int) {
 	for i, match := range n.RouteMatches {
 		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
-		n.RouteMatches[i].SSA.CallPaths = match.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], filter)
+		n.RouteMatches[i].SSA.CallPaths = match.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], filter, recLimit)
 	}
 }
 

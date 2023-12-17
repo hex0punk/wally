@@ -111,12 +111,16 @@ Possible Paths: 6
 		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
 ```
 
+### Filtering call path analysis
+
 **NOTE: This is very important if you want to use the `ssa` call mapper feature described above**. When running wally in ssa mode against large code bases, you'd want to tell it to limit it's call path mapping work to only packages in the `module` of the code base you are running it against. For instance, going back to the nomad example, you'd want to run wally like so:
 
 ```shell
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/"
 ```
 Where `-f` defines a filter for the call stack search function. If you don't do this, wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests. 
+
+If using `-f` is not enough and you are seeing wally taking a very long time in the "solving call paths" step, wally may have encountered some sort or recursive call. In that case, you can use `-l` and an integer to limit the number of recursive calls wally makes when mapping call paths. This will limit the paths you see in the output, but using a high enough number should return helpful paths still. Experiment with `-l`, `-f`, or both to get the results you need or expect.
 
 ### PNG Graph output 
 

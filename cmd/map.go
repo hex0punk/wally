@@ -8,10 +8,11 @@ import (
 )
 
 var (
-	path   string
-	runSSA bool
-	filter string
-	graph  string
+	path    string
+	runSSA  bool
+	filter  string
+	graph   string
+	limiter int
 )
 
 // mapCmd represents the map command
@@ -28,6 +29,7 @@ func init() {
 	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
+	mapCmd.PersistentFlags().IntVarP(&limiter, "rec-limit", "l", 0, "Limit the max number of recursive calls wally makes when mapping call stacks")
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
@@ -39,7 +41,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	navigator.MapRoutes(path)
 	if runSSA {
 		navigator.Logger.Info("Solving call paths")
-		navigator.SolveCallPaths(filter)
+		navigator.SolveCallPaths(filter, limiter)
 	}
 	navigator.Logger.Info("Printing results")
 	navigator.PrintResults()
@@ -48,5 +50,4 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 		navigator.Logger.Info("Generating graph", "graph filename", graph)
 		reporter.GenerateGraph(navigator.RouteMatches, graph)
 	}
-
 }
