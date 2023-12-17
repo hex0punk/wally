@@ -117,6 +117,10 @@ $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/"
 ```
 Where `-f` defines a filter for the call stack search function. If you don't do this, wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests. 
 
+### PNG Graph output 
+
+When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG containing a graphviz base graph of the call stacks. 
+
 ## Guesser mode
 
 In the future, Wally will be able to make educated guesses for potential HTTP or RPC routes with no additional indicators. For now, you can define indicators with a wild flag package (`"*"`) if you are not able (or don't want) to tell Wally which package each function may be coming from.
@@ -127,7 +131,14 @@ At its core Wally is basically a function mapper. You can define functions in co
 
 ## Logging
 
-You can add logging statements as needed during development in any function with a `Navigator` receiver like this: `n.Logger.Debug("your message", "a key", "a value")`.
+You can add logging statements as needed during development in any function with a `Navigator` receiver like this: `n.Logger.Debug("your message", "a key", "a value")`. For example, running:
+
+```shell
+$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -g ./mygraph.png
+```
+From _nomad/command/agent_ will output this graph:
+
+![](graphsample.png)
 
 ## I am seeing duplicate call stack paths in ssa mode
 
