@@ -7,7 +7,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"reflect"
 	"wally/passes/cefinder"
-	"wally/wallylib"
+	match "wally/wallylib"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -33,7 +33,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		if fd.Body != nil && fd.Body.List != nil {
 			for _, b := range fd.Body.List {
-				if ce := wallylib.GetExprsFromStmt(b); ce != nil && len(ce) > 0 {
+				if ce := match.GetExprsFromStmt(b); ce != nil && len(ce) > 0 {
 					cf.CE[fd] = append(cf.CE[fd], ce...)
 				}
 			}

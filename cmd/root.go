@@ -31,13 +31,19 @@ var rootCmd = &cobra.Command{
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	path := config
+	err := rootCmd.Execute()
+	if err != nil {
+		os.Exit(1)
+	}
+}
+
+func initConfig() {
 	wallyConfig = WallyConfig{}
-	fmt.Println("Looking for config file in ", path)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		fmt.Println("Configuration file `%s` not found. Will run stock indicators only", path)
+	fmt.Println("Looking for config file in ", config)
+	if _, err := os.Stat(config); os.IsNotExist(err) {
+		fmt.Println("Configuration file `%s` not found. Will run stock indicators only", config)
 	} else {
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(config)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -47,15 +53,11 @@ func Execute() {
 			fmt.Println("Could not load configuration file: %s. Will run stock indicators only", err)
 		}
 	}
-
-	err := rootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
-	}
 }
 
 func init() {
+	cobra.OnInitialize(initConfig)
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().CountVarP(&verbose, "verbose", "v", "verbose output. Up to -vvv levels of verbosity are supported")
-	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "./.wally.yaml", "path for config file containing indicators")
+	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 }

@@ -6,10 +6,10 @@ import (
 	"github.com/goccy/go-graphviz/cgraph"
 	"log"
 	"strings"
-	"wally/wallylib"
+	"wally/match"
 )
 
-func PrintResults(matches []wallylib.RouteMatch) {
+func PrintResults(matches []match.RouteMatch) {
 	for _, match := range matches {
 		// TODO: This is printing the values from the indicator
 		// That's fine, and it works but it should print values
@@ -19,7 +19,7 @@ func PrintResults(matches []wallylib.RouteMatch) {
 	fmt.Println("Total Results: ", len(matches))
 }
 
-func PrintMach(match wallylib.RouteMatch) {
+func PrintMach(match match.RouteMatch) {
 	fmt.Println("===========MATCH===============")
 	fmt.Println("Package: ", match.Indicator.Package)
 	fmt.Println("Function: ", match.Indicator.Function)
@@ -48,7 +48,7 @@ func PrintMach(match wallylib.RouteMatch) {
 }
 
 // TODO: Move this to a new package dedicated to graphing, or in this same package but in a separate file
-func GenerateGraph(matches []wallylib.RouteMatch, path string) {
+func GenerateGraph(matches []match.RouteMatch, path string) {
 	g := graphviz.New()
 	graph, err := g.Graph()
 	if err != nil {

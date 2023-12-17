@@ -20,6 +20,7 @@ import (
 	"wally/checker"
 	"wally/indicator"
 	"wally/logger"
+	"wally/match"
 	"wally/passes/callermapper"
 	"wally/passes/cefinder"
 	"wally/passes/tokenfile"
@@ -31,7 +32,7 @@ type Navigator struct {
 	Logger          *slog.Logger
 	SSA             *SSA
 	RouteIndicators []indicator.Indicator
-	RouteMatches    []wallylib.RouteMatch
+	RouteMatches    []match.RouteMatch
 	RunSSA          bool
 	Packages        []*packages.Package
 }
@@ -117,7 +118,7 @@ func (n *Navigator) MapRoutes(path string) {
 		// This should be placed outside of this loop
 		// we want to collect single results here, then run through all at the end.
 		if result != nil {
-			if passIssues, ok := result.([]wallylib.RouteMatch); ok {
+			if passIssues, ok := result.([]match.RouteMatch); ok {
 				for _, iss := range passIssues {
 					n.RouteMatches = append(n.RouteMatches, iss)
 				}
@@ -155,7 +156,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.GenDecl)(nil),
 	}
 
-	results := []wallylib.RouteMatch{}
+	results := []match.RouteMatch{}
 
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
@@ -186,7 +187,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		pos := pass.Fset.Position(funExpr.Pos())
 
 		// Whether we are able to get params or not we have a match
-		match := wallylib.NewRouteMatch(*route, pos)
+		match := match.NewRouteMatch(*route, pos)
 
 		sel, _ := funExpr.(*ast.SelectorExpr)
 
