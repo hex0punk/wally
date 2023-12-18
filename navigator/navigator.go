@@ -49,12 +49,12 @@ func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
 	}
 }
 
-func (n *Navigator) MapRoutes(path string) {
-	if path == "" {
-		path = "./..."
+func (n *Navigator) MapRoutes(paths []string) {
+	if len(paths) == 0 {
+		paths = append(paths, "./...")
 	}
 
-	pkgs := LoadPackages(path)
+	pkgs := LoadPackages(paths)
 	n.Packages = pkgs
 
 	if n.RunSSA {
@@ -127,7 +127,7 @@ func (n *Navigator) MapRoutes(path string) {
 	}
 }
 
-func LoadPackages(path string) []*packages.Package {
+func LoadPackages(paths []string) []*packages.Package {
 	fset := token.NewFileSet()
 
 	cfg := &packages.Config{
@@ -137,7 +137,7 @@ func LoadPackages(path string) []*packages.Package {
 		Fset: fset,
 	}
 
-	pkgs, err := packages.Load(cfg, path)
+	pkgs, err := packages.Load(cfg, paths...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load: %v\n", err)
 		os.Exit(1)
