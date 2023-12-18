@@ -82,6 +82,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 	// TODO: consider this as part of a checker instead
 	results := map[*analysis.Analyzer]interface{}{}
 	for _, pkg := range pkgs {
+		pkg := pkg
 		pass := &analysis.Pass{
 			Analyzer:          checker.Analyzer,
 			Fset:              pkg.Fset,
