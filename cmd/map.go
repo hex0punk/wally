@@ -8,11 +8,12 @@ import (
 )
 
 var (
-	paths   []string
-	runSSA  bool
-	filter  string
-	graph   string
-	limiter int
+	paths    []string
+	runSSA   bool
+	filter   string
+	graph    string
+	limiter  int
+	printPos bool
 )
 
 // mapCmd represents the map command
@@ -30,6 +31,7 @@ func init() {
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
 	mapCmd.PersistentFlags().IntVarP(&limiter, "rec-limit", "l", 0, "Limit the max number of recursive calls wally makes when mapping call stacks")
+	mapCmd.PersistentFlags().BoolVar(&printPos, "print-pos", false, "Print the position of call graph paths rather than node")
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
@@ -41,7 +43,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	navigator.MapRoutes(paths)
 	if runSSA {
 		navigator.Logger.Info("Solving call paths")
-		navigator.SolveCallPaths(filter, limiter)
+		navigator.SolveCallPaths(filter, limiter, printPos)
 	}
 	navigator.Logger.Info("Printing results")
 	navigator.PrintResults()
