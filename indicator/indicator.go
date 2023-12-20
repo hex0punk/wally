@@ -17,6 +17,7 @@ const (
 )
 
 type Indicator struct {
+	Id            string        `yaml:"id"`
 	Package       string        `yaml:"package"`
 	Type          string        `yaml:"type"`
 	Function      string        `yaml:"function"`
@@ -33,8 +34,12 @@ func InitIndicators(customIndicators []Indicator) []Indicator {
 	indicators := getStockIndicators()
 	if customIndicators != nil && len(customIndicators) > 0 {
 		fmt.Println("Loading custom indicator")
-		for _, ind := range customIndicators {
+		idStart := len(indicators)
+		for i, ind := range customIndicators {
 			indCpy := ind
+			if indCpy.Id == "" {
+				indCpy.Id = fmt.Sprintf("%d", idStart+i+1)
+			}
 			fmt.Println("Pkg: ", indCpy.Package)
 			fmt.Println("Func: ", indCpy.Function)
 			fmt.Println()
@@ -47,6 +52,7 @@ func InitIndicators(customIndicators []Indicator) []Indicator {
 func getStockIndicators() []Indicator {
 	return []Indicator{
 		{
+			Id:       "1",
 			Package:  "net/http",
 			Type:     "",
 			Function: "Handle",
@@ -56,6 +62,7 @@ func getStockIndicators() []Indicator {
 			IndicatorType: Service,
 		},
 		{
+			Id:       "2",
 			Package:  "google.golang.org/grpc",
 			Type:     "",
 			Function: "Invoke",

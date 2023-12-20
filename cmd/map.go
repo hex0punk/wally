@@ -5,15 +5,16 @@ import (
 	"wally/indicator"
 	"wally/navigator"
 	"wally/reporter"
+	"wally/wallylib/callmapper"
 )
 
 var (
-	paths    []string
-	runSSA   bool
-	filter   string
-	graph    string
-	limiter  int
-	printPos bool
+	paths      []string
+	runSSA     bool
+	filter     string
+	graph      string
+	limiter    int
+	printNodes bool
 )
 
 // mapCmd represents the map command
@@ -31,25 +32,30 @@ func init() {
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
 	mapCmd.PersistentFlags().IntVarP(&limiter, "rec-limit", "l", 0, "Limit the max number of recursive calls wally makes when mapping call stacks")
-	mapCmd.PersistentFlags().BoolVar(&printPos, "print-pos", false, "Print the position of call graph paths rather than node")
+	mapCmd.PersistentFlags().BoolVar(&printNodes, "print-nodes", false, "Print the position of call graph paths rather than node")
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators(wallyConfig.Indicators)
-	navigator := navigator.NewNavigator(verbose, indicators)
-	navigator.RunSSA = runSSA
+	nav := navigator.NewNavigator(verbose, indicators)
+	nav.RunSSA = runSSA
 
-	navigator.Logger.Info("Running mapper", "indicators", len(indicators))
-	navigator.MapRoutes(paths)
+	nav.Logger.Info("Running mapper", "indicators", len(indicators))
+	nav.MapRoutes(paths)
 	if runSSA {
-		navigator.Logger.Info("Solving call paths")
-		navigator.SolveCallPaths(filter, limiter, printPos)
+		mapperOptions := callmapper.Options{
+			Filter:     filter,
+			RecLimit:   limiter,
+			PrintNodes: printNodes,
+		}
+		nav.Logger.Info("Solving call paths")
+		nav.SolveCallPaths(mapperOptions)
 	}
-	navigator.Logger.Info("Printing results")
-	navigator.PrintResults()
+	nav.Logger.Info("Printing results")
+	nav.PrintResults()
 
 	if runSSA && graph != "" {
-		navigator.Logger.Info("Generating graph", "graph filename", graph)
-		reporter.GenerateGraph(navigator.RouteMatches, graph)
+		nav.Logger.Info("Generating graph", "graph filename", graph)
+		reporter.GenerateGraph(nav.RouteMatches, graph)
 	}
 }
