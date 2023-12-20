@@ -21,6 +21,7 @@ func PrintResults(matches []match.RouteMatch) {
 
 func PrintMach(match match.RouteMatch) {
 	fmt.Println("===========MATCH===============")
+	fmt.Println("Indicator ID: ", match.Indicator.Id)
 	fmt.Println("Package: ", match.Indicator.Package)
 	fmt.Println("Function: ", match.Indicator.Function)
 	fmt.Println("Params: ")
@@ -36,7 +37,12 @@ func PrintMach(match match.RouteMatch) {
 	fmt.Println("Enclosed by: ", match.EnclosedBy)
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths) > 0 {
-		fmt.Println("Possible Paths:", len(match.SSA.CallPaths))
+		if match.SSA.RecLimited {
+			fmt.Println("Possible Paths (rec limited):", len(match.SSA.CallPaths))
+		} else {
+			fmt.Println("Possible Paths:", len(match.SSA.CallPaths))
+		}
+
 		for i, paths := range match.SSA.CallPaths {
 			fmt.Printf("	Path %d:\n", i+1)
 			for x := len(paths) - 1; x >= 0; x-- {
@@ -55,7 +61,7 @@ func GenerateGraph(matches []match.RouteMatch, path string) {
 		log.Fatal(err)
 	}
 	for _, match := range matches {
-		m, err := graph.CreateNode(match.Indicator.Package + "." + match.Indicator.Function)
+		m, err := graph.CreateNode(match.SSA.EnclosedByFunc.Pkg.String() + "." + match.SSA.EnclosedByFunc.Name())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -64,6 +70,9 @@ func GenerateGraph(matches []match.RouteMatch, path string) {
 		for _, paths := range match.SSA.CallPaths {
 			var prev *cgraph.Node
 			for i := 0; i < len(paths); i++ {
+				//if i == 0 {
+				//	continue
+				//}
 				if i == 0 {
 					prev, err = graph.CreateNode(paths[i])
 					if err != nil {

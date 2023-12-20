@@ -26,6 +26,7 @@ import (
 	"wally/passes/tokenfile"
 	"wally/reporter"
 	"wally/wallylib"
+	"wally/wallylib/callmapper"
 )
 
 type Navigator struct {
@@ -245,10 +246,12 @@ func (n *Navigator) SolvePathsSlow() {
 	}
 }
 
-func (n *Navigator) SolveCallPaths(filter string, recLimit int) {
+func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	for i, match := range n.RouteMatches {
+		i, match := i, match
 		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
-		n.RouteMatches[i].SSA.CallPaths = match.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], filter, recLimit)
+		cm := callmapper.NewCallMapper(&match, options)
+		n.RouteMatches[i].SSA.CallPaths = cm.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
 	}
 }
 
