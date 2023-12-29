@@ -86,6 +86,34 @@ A good test project to run it against is [nomad](https://github.com/hashicorp/no
 $ <path/to/wally/wally> map -p ./... -vvv
 ```
 
+## Running Wally with Docker
+
+Wally can be easily run using Docker. Follow these steps:
+
+1. Clone this project
+2. In a separate directory, clone [nomad](https://github.com/hashicorp/nomad)
+3. Build the Docker Image:
+
+```
+docker build -t go-wally .
+```
+
+3. Run Wally with Docker:
+
+```
+docker run -v $(pwd):/go/src/app go-wally map -p ./... -vvv
+```
+
+This command mounts your current directory into the Docker container and runs the wally map command. Adjust the flags (-p, -vvv, etc.) as needed for your use case.
+
+If you have a specific configuration file (e.g., .wally.yaml), you can mount it into the container:
+
+```
+docker run -v $(pwd):/go/src/app -v /path/to/.wally.yaml:/go/src/app/.wally.yaml go-wally map -c .wally.yaml -p ./... -vvv
+```
+
+This will run Wally within a Docker container, analyzing your Go code for HTTP and RPC routes based on the specified indicators and configurations.
+
 ## Wally's fanciest features
 
 Wally should work even if you are not able to build the project you want to run it against. However, if you can build the project without any issues, you can run Wally using the `--ssa` flag, at which point Wally will be able to do the following:
