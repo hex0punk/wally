@@ -44,7 +44,7 @@ Wally needs a bit of hand-holding. Though it can also do a pretty good job at gu
 
 Wally runs a number of `indicators` which are basically clues as to whether a function in code may be related to a gRPC or HTTP route. By default, `wally` has a number of built-in `indicators` which check for common ways to set up and call HTTP and RPC methods using standard and popular libraries. However, sometimes a codebase may have custom methods for setting up HTTP routes or for calling HTTP and RPC services. For instance, when reviewing Nomad, you can give Wally the following configuration file with Nomad-specific indicators:
 
-````yaml
+```yaml
 indicators:
   - package: "github.com/hashicorp/nomad/command/agent"
     type: ""
@@ -65,7 +65,7 @@ indicators:
     params:
       - name: "endpoint"
         pos: 0
-````
+```
 
 Note that you can specify the parameter that you want Wally to attempt to solve the value to. If you don't know the name of the parameter (per the function signature), you can give it the position in the signature. You can then use the `--config` or `-c` flag along with the path to the configuration file.
 
@@ -80,9 +80,9 @@ A good test project to run it against is [nomad](https://github.com/hashicorp/no
 5. Create a configuration file named `.wally.yaml` with the content shown in the previous section of this README, and save it to the root of the nomad directory.
 6. Run the following command from the nomad root:
 
-````shell
+```shell
 $ <path/to/wally/wally> map -p ./... -vvv
-````
+```
 
 ## Wally's fanciest features
 
@@ -93,7 +93,7 @@ Wally should work even if you are not able to build the project you want to run 
 
 When using the `--ssa` flag you can expect output like this:
 
-````shell
+```shell
 ===========MATCH===============
 Package:  net/http
 Function:  Handle
@@ -120,15 +120,15 @@ Possible Paths: 6
 		n79544:(*github.com/hashicorp/nomad/command/agent.Command).reloadHTTPServer --->
 		n24050:github.com/hashicorp/nomad/command/agent.NewHTTPServers --->
 		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
-````
+```
 
 ### Filtering call path analysis
 
 **NOTE: This is very important if you want to use the `ssa` call mapper feature described above**. When running Wally in SSA mode against large codebases, you'd want to tell it to limit its call path mapping work to only packages in the `module` of the codebase you are running it against. For instance, going back to the Nomad example, you'd want to run Wally like so:
 
-````shell
+```shell
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/"
-````
+```
 
 Where `-f` defines a filter for the call stack search function. If you don't do this, Wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests. 
 
@@ -138,9 +138,9 @@ If using `-f` is not enough and you are seeing Wally taking a very long time in 
 
 When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG or XDOT containing a Graphviz-based graph of the call stacks. For example, running:
 
-````shell
+```shell
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -g ./mygraph.png
-````
+```
 
 From _nomad/command/agent_ will output this graph:
 
