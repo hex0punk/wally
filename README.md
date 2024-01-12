@@ -1,8 +1,14 @@
-# Wally
+<div align="center">
+	<h1><img alt="Wally" src="Wally3.gif" height="300" /><br />
+		wally the cartographer
+	</h1>
+</div>
+
+Wally is a static analysis tool for attack surface mapping. It automates the initial stages of threat modelling by mapping RPC and HTTP routes in Go code.
 
 ![](Wally3.gif)
 
-Static analysis tool for detecting and mapping RPC and HTTP routes in Go code.
+Static analysis tool automates initial steps of a threat model by mapping mapping RPC and HTTP routes in Go code.
 
 ## The basics
 
