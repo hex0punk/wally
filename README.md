@@ -1,5 +1,5 @@
 <div align="center">
-	<h1><img alt="Wally" src="Wally3.gif" height="300" /><br />
+	<h1><img alt="Wally" src="Wally3.gif" height="250" /><br />
 		wally the cartographer
 	</h1>
 </div>
