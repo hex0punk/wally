@@ -61,12 +61,6 @@ func GenerateGraph(matches []match.RouteMatch, path string) {
 		log.Fatal(err)
 	}
 	for _, match := range matches {
-		m, err := graph.CreateNode(match.Indicator.Package + "." + match.Indicator.Function)
-		if err != nil {
-			log.Fatal(err)
-		}
-		m = m.SetColor("red").SetFillColor("blue").SetShape("diamond")
-
 		for _, paths := range match.SSA.CallPaths {
 			var prev *cgraph.Node
 			for i := 0; i < len(paths); i++ {
@@ -75,10 +69,7 @@ func GenerateGraph(matches []match.RouteMatch, path string) {
 					if err != nil {
 						log.Fatal(err)
 					}
-					_, err := graph.CreateEdge("", prev, m)
-					if err != nil {
-						log.Fatal(err)
-					}
+					prev = prev.SetColor("red").SetFillColor("blue").SetShape("diamond")
 				} else {
 					newNode, err := graph.CreateNode(paths[i])
 					if err != nil {
