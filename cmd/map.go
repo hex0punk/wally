@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
 	"wally/indicator"
 	"wally/navigator"
@@ -15,6 +16,8 @@ var (
 	graph      string
 	limiter    int
 	printNodes bool
+	format     string
+	outputFile string
 )
 
 // mapCmd represents the map command
@@ -22,7 +25,14 @@ var mapCmd = &cobra.Command{
 	Use:   "map",
 	Short: "Get list a list of all routes",
 	Long:  `Get list a list of all routes with resolved values as possible for params, along with enclosing functions"`,
-	Run:   mapRoutes,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if format != "" && format != "json" {
+			return fmt.Errorf("invalid output type: %q", format)
+		}
+
+		return nil
+	},
+	Run: mapRoutes,
 }
 
 func init() {
@@ -33,6 +43,8 @@ func init() {
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
 	mapCmd.PersistentFlags().IntVarP(&limiter, "rec-limit", "l", 0, "Limit the max number of recursive calls wally makes when mapping call stacks")
 	mapCmd.PersistentFlags().BoolVar(&printNodes, "print-nodes", false, "Print the position of call graph paths rather than node")
+	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json")
+	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
@@ -52,7 +64,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 		nav.SolveCallPaths(mapperOptions)
 	}
 	nav.Logger.Info("Printing results")
-	nav.PrintResults()
+	nav.PrintResults(format, outputFile)
 
 	if runSSA && graph != "" {
 		nav.Logger.Info("Generating graph", "graph filename", graph)
