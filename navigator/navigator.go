@@ -290,6 +290,12 @@ func File(pass *analysis.Pass, pos token.Pos) *ast.File {
 	return m[pass.Fset.File(pos)]
 }
 
-func (n *Navigator) PrintResults() {
-	reporter.PrintResults(n.RouteMatches)
+func (n *Navigator) PrintResults(format string, fileName string) {
+	if format == "json" {
+		if err := reporter.PrintJson(n.RouteMatches, fileName); err != nil {
+			n.Logger.Error("Error printing to json", "error", err.Error())
+		}
+	} else {
+		reporter.PrintResults(n.RouteMatches)
+	}
 }

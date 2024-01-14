@@ -1,10 +1,12 @@
 package reporter
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
 	"log"
+	"os"
 	"strings"
 	"wally/match"
 )
@@ -34,6 +36,13 @@ func PrintMach(match match.RouteMatch) {
 		}
 		fmt.Printf("	%s: %s\n", k, v)
 	}
+
+	if match.SSA != nil && match.SSA.EnclosedByFunc != nil {
+		fmt.Println("Enclosed by: ", match.SSA.EnclosedByFunc.String())
+	} else {
+		fmt.Println("Enclosed by: ", match.EnclosedBy)
+	}
+
 	fmt.Println("Enclosed by: ", match.EnclosedBy)
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths) > 0 {
@@ -51,6 +60,31 @@ func PrintMach(match match.RouteMatch) {
 		}
 	}
 	fmt.Println()
+}
+
+func PrintJson(matches []match.RouteMatch, filename string) error {
+	jsonOutput, err := json.Marshal(matches)
+	if err != nil {
+		return err
+	}
+
+	if filename != "" {
+		// Create a file named "example.txt"
+		file, err := os.Create(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+
+		// Write data to the file
+		_, err = file.Write(jsonOutput)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		fmt.Println(string(jsonOutput))
+	}
+	return nil
 }
 
 // TODO: Move this to a new package dedicated to graphing, or in this same package but in a separate file
