@@ -42,8 +42,7 @@ func PrintMach(match match.RouteMatch) {
 	} else {
 		fmt.Println("Enclosed by: ", match.EnclosedBy)
 	}
-
-	fmt.Println("Enclosed by: ", match.EnclosedBy)
+	
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths) > 0 {
 		if match.SSA.RecLimited {
