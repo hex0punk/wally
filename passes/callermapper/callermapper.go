@@ -31,6 +31,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
+		// Go over the body of the function and get a map of all call expressions for later use
 		if fd.Body != nil && fd.Body.List != nil {
 			for _, b := range fd.Body.List {
 				if ce := match.GetExprsFromStmt(b); ce != nil && len(ce) > 0 {

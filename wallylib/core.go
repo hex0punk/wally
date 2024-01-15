@@ -97,6 +97,9 @@ func GetName(e ast.Expr) string {
 	}
 }
 
+// TODO: Lots of repeated code that we can refactor here
+// Further, this is likely not sufficient if used for more general purposes (outside wally) as
+// there are parts of some statements (i.e. a ForStmt Post) that are not handled here
 func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 	var result []*ast.CallExpr
 	switch s := stmt.(type) {
@@ -156,7 +159,40 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 				result = append(result, ce)
 			}
 		}
-
+	case *ast.ReturnStmt:
+		for _, retResult := range s.Results {
+			ce := callExprFromExpr(retResult)
+			if ce != nil {
+				result = append(result, ce)
+			}
+		}
+	case *ast.ForStmt:
+		ces := GetExprsFromStmt(s.Body)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
+	case *ast.RangeStmt:
+		ces := GetExprsFromStmt(s.Body)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
+	case *ast.SelectStmt:
+		for _, clause := range s.Body.List {
+			//ces := GetExprsFromStmt(clause)
+			if cc, ok := clause.(*ast.CommClause); ok {
+				for _, stm := range cc.Body {
+					bodyExps := GetExprsFromStmt(stm)
+					if bodyExps != nil && len(bodyExps) > 0 {
+						result = append(result, bodyExps...)
+					}
+				}
+			}
+		}
+	case *ast.LabeledStmt:
+		ces := GetExprsFromStmt(s.Stmt)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
 	}
 	return result
 }
