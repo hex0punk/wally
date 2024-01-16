@@ -200,6 +200,14 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 func callExprFromExpr(e ast.Expr) []*ast.CallExpr {
 	switch e := e.(type) {
 	case *ast.CallExpr:
+		// This loop makes sure we obtain CEs when in the body function literal used
+		// as arguments to CEs. See https://github.com/hashicorp/nomad/blob/d34788896f8892377a9039b81a65abd7a913b3cc/nomad/csi_endpoint.go#L1633
+		// for an example
+		for _, v := range e.Args {
+			if rr, ok := v.(*ast.FuncLit); ok {
+				return GetExprsFromStmt(rr.Body)
+			}
+		}
 		return append([]*ast.CallExpr{}, e)
 	case *ast.FuncLit:
 		return GetExprsFromStmt(e.Body)
