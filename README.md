@@ -162,11 +162,15 @@ At its core, Wally is, essentially, a function mapper. You can define functions 
 
 You can add logging statements as needed during development in any function with a `Navigator` receiver like this: `n.Logger.Debug("your message", "a key", "a value")`.
 
-## I am seeing duplicate call stack paths in SSA mode
+## Troubleshooting
 
-At the moment, Wally will often give you duplicate stack paths, where you'd notice a path of, say, A->B->C is repeated a couple of times or more. Based on my testing and debugging this is a drawback of the [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.16.1/go/callgraph/cha) algorithm from Go's `callgraph` package, which Wally uses for the call stack path functionality. I am experimenting with other available algorithms in `go/callgraph/` to determine what the best option to minimize such issues (while getting accurate call stacks) could be and will update Wally's code accordingly. In the case that we stick to the `cha` algorithm, I will write code to filter duplicates. 
+### When running in SSA mode, I get findings with no enclosed functions reported
 
-_Update:_ You should not be seeing any duplicates as I added a function to remove those. However, this adds more work to Wally, so part of the future work still includes testing other callgraph algorithms thoroughly.
+This is often caused by issues in the target code base. Make sure you are able to build the target codebase. You may want to run `go build` and fix any issues reported by the compiler. Then, run wally again against it.
+
+### Wally appears to be stuck in loop
+
+See the section on [Filtering call path analysis](###Filtering-call-path-analysis)
 
 ## Contributing
 

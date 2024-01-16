@@ -106,7 +106,7 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 	case *ast.ExprStmt:
 		ce := callExprFromExpr(s.X)
 		if ce != nil {
-			result = append(result, ce)
+			result = append(result, ce...)
 		}
 	case *ast.SwitchStmt:
 		for _, iclause := range s.Body.List {
@@ -121,7 +121,7 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 	case *ast.IfStmt:
 		condCe := callExprFromExpr(s.Cond)
 		if condCe != nil {
-			result = append(result, condCe)
+			result = append(result, condCe...)
 		}
 		if s.Init != nil {
 			initCe := GetExprsFromStmt(s.Init)
@@ -150,20 +150,20 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 		for _, rhs := range s.Rhs {
 			ce := callExprFromExpr(rhs)
 			if ce != nil {
-				result = append(result, ce)
+				result = append(result, ce...)
 			}
 		}
 		for _, lhs := range s.Lhs {
 			ce := callExprFromExpr(lhs)
 			if ce != nil {
-				result = append(result, ce)
+				result = append(result, ce...)
 			}
 		}
 	case *ast.ReturnStmt:
 		for _, retResult := range s.Results {
 			ce := callExprFromExpr(retResult)
 			if ce != nil {
-				result = append(result, ce)
+				result = append(result, ce...)
 			}
 		}
 	case *ast.ForStmt:
@@ -197,10 +197,12 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 	return result
 }
 
-func callExprFromExpr(e ast.Expr) *ast.CallExpr {
+func callExprFromExpr(e ast.Expr) []*ast.CallExpr {
 	switch e := e.(type) {
 	case *ast.CallExpr:
-		return e
+		return append([]*ast.CallExpr{}, e)
+	case *ast.FuncLit:
+		return GetExprsFromStmt(e.Body)
 	}
 	return nil
 }
