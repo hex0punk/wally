@@ -90,29 +90,51 @@ $ <path/to/wally/wally> map -p ./... -vvv
 
 Wally can be easily run using Docker. Follow these steps:
 
-1. Clone this project
-2. In a separate directory, clone [nomad](https://github.com/hashicorp/nomad)
+1. Clone this project.
+2. In a separate directory, clone [nomad](https://github.com/hashicorp/nomad).
 3. Build the Docker Image:
 
-```
-docker build -t go-wally .
-```
+    ```bash
+    docker build -t go-wally .
+    ```
 
-3. Run Wally with Docker:
+4. Run an interactive shell inside the Docker container
 
-```
-docker run -v $(pwd):/go/src/app go-wally map -p ./... -vvv
-```
+    ```bash
+    docker run -it go-wally /bin/sh
+    ```
 
-This command mounts your current directory into the Docker container and runs the wally map command. Adjust the flags (-p, -vvv, etc.) as needed for your use case.
+5. Once inside the container, check the presence of the `wally` binary and inspect it:
 
-If you have a specific configuration file (e.g., .wally.yaml), you can mount it into the container:
+    ```bash
+    ls -l /go/src/app/wally
+    file /go/src/app/wally
+    ```
 
-```
-docker run -v $(pwd):/go/src/app -v /path/to/.wally.yaml:/go/src/app/.wally.yaml go-wally map -c .wally.yaml -p ./... -vvv
-```
+   Ensure that the binary is present and has the correct size and type.
 
-This will run Wally within a Docker container, analyzing your Go code for HTTP and RPC routes based on the specified indicators and configurations.
+6. Exit the interactive shell by typing `exit`.
+
+7. Run Wally with Docker, specifying the necessary parameters, such as the project path, configuration file, etc.:
+
+    ```bash
+    docker run -v $(pwd):/go/src/app go-wally wally map -p ./... -vvv
+    ```
+
+   Adjust the flags (-p, -vvv, etc.) as needed for your use case.
+
+8. If you have a specific configuration file (e.g., .wally.yaml), you can mount it into the container:
+
+    ```bash
+    docker run -v $(pwd):/go/src/app -v /path/to/.wally.yaml:/go/src/app/.wally.yaml go-wally wally map -c .wally.yaml -p ./... -vvv
+    ```
+
+   This will run Wally within a Docker container, analyzing your Go code for HTTP and RPC routes based on the specified indicators and configurations.
+
+9. Optionally, if you encountered any issues during the Docker build, you can revisit the interactive shell inside the container for further debugging.
+
+10. After running Wally, you can check the results and the generated PNG or XDOT graph output, as explained in the README.
+
 
 ## Wally's fanciest features
 
