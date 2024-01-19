@@ -303,13 +303,23 @@ func (n *Navigator) RecordLocals(gen *ast.AssignStmt, pass *analysis.Pass) {
 		}
 
 		res := wallylib.GetValueFromExp(e, pass)
-		if res == "" {
+		if res == "" || res == "\"\"" {
 			return
 		}
 
+		var fact checker.LocalVar
 		gv := new(checker.LocalVar)
-		gv.Val = res
-		pass.ExportObjectFact(o1, gv)
+		pass.ImportObjectFact(o1, &fact)
+
+		if fact.Vals != nil {
+			gv.Vals = fact.Vals
+			gv.Vals = append(gv.Vals, res)
+			pass.ExportObjectFact(o1, gv)
+
+		} else {
+			gv.Vals = append(gv.Vals, res)
+			pass.ExportObjectFact(o1, gv)
+		}
 	}
 }
 

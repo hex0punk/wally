@@ -92,7 +92,15 @@ func GetValueFromExp(exp ast.Expr, pass *analysis.Pass) string {
 		if con, ok := o1.(*types.Var); ok {
 			var fact checker.LocalVar
 			if pass.ImportObjectFact(o1, &fact) {
-				return fact.Val
+				var result string
+				for i, v := range fact.Vals {
+					if i == len(fact.Vals)-1 {
+						result += " " + v
+						continue
+					}
+					result += v + " || "
+				}
+				return result
 			}
 			// A non-constant value, best effort (without ssa navigator) is to
 			// return the variable name

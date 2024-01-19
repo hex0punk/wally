@@ -16,7 +16,7 @@ func (*GlobalVar) AFact() {}
 func (*GlobalVar) String() string { return "GlobalVar" }
 
 type LocalVar struct {
-	Val string
+	Vals []string
 }
 
 func (*LocalVar) AFact() {}
