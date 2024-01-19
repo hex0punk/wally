@@ -42,25 +42,28 @@ One of the built-in indicators in `wally` will allow it to find functions that c
 
 ## Wally configurations
 
-Wally needs a bit of hand-holding. Though it can also do a pretty good job at guessing paths, it helps a lot if you tell it the packages and functions to look for, along with the parameters that you are hoping to discover and map. So, to help Wally do the job, you can specify a configuration file in YAML that defines a set of indicators. 
+Wally needs a bit of hand-holding. Though it can also do a pretty good job at guessing paths, it helps a lot if you tell it the packages and functions to look for, along with the parameters that you are hoping to discover and map. So, to help Wally do the job, you can specify a configuration file in YAML that defines a set of indicators.
 
 Wally runs a number of `indicators` which are basically clues as to whether a function in code may be related to a gRPC or HTTP route. By default, `wally` has a number of built-in `indicators` which check for common ways to set up and call HTTP and RPC methods using standard and popular libraries. However, sometimes a codebase may have custom methods for setting up HTTP routes or for calling HTTP and RPC services. For instance, when reviewing Nomad, you can give Wally the following configuration file with Nomad-specific indicators:
 
 ```yaml
 indicators:
-  - package: "github.com/hashicorp/nomad/command/agent"
+  - id: nomad-1
+    package: "github.com/hashicorp/nomad/command/agent"
     type: ""
     function: "forward"
     indicatorType: 1
     params:
       - name: "method"
-  - package: "github.com/hashicorp/nomad/nomad"
+  - id: nomad-2
+    package: "github.com/hashicorp/nomad/nomad"
     type: ""
     function: "RPC"
     indicatorType: 1
     params:
       - name: "method"
-  - package: "github.com/hashicorp/nomad/api"
+  - id: nomad-3
+    package: "github.com/hashicorp/nomad/api"
     type: "s"
     function: "query"
     indicatorType: 1
@@ -85,6 +88,56 @@ A good test project to run it against is [nomad](https://github.com/hashicorp/no
 ```shell
 $ <path/to/wally/wally> map -p ./... -vvv
 ```
+
+## Running Wally with Docker
+
+Wally can be easily run using Docker. Follow these steps:
+
+1. Clone this project.
+2. In a separate directory, clone [nomad](https://github.com/hashicorp/nomad).
+3. Build the Docker Image:
+
+    ```bash
+    docker build -t go-wally .
+    ```
+
+4. Run an interactive shell inside the Docker container
+
+    ```bash
+    docker run -it go-wally /bin/sh
+    ```
+
+5. Once inside the container, check the presence of the `wally` binary and inspect it:
+
+    ```bash
+    ls -l /go/src/app/wally
+    file /go/src/app/wally
+    ```
+
+   Ensure that the binary is present and has the correct size and type.
+
+6. Exit the interactive shell by typing `exit`.
+
+7. Run Wally with Docker, specifying the necessary parameters, such as the project path, configuration file, etc.:
+
+    ```bash
+    docker run -v $(pwd):/go/src/app go-wally wally map -p ./... -vvv
+    ```
+
+   Adjust the flags (-p, -vvv, etc.) as needed for your use case.
+
+8. If you have a specific configuration file (e.g., .wally.yaml), you can mount it into the container:
+
+    ```bash
+    docker run -v $(pwd):/go/src/app -v /path/to/.wally.yaml:/go/src/app/.wally.yaml go-wally wally map -c .wally.yaml -p ./... -vvv
+    ```
+
+   This will run Wally within a Docker container, analyzing your Go code for HTTP and RPC routes based on the specified indicators and configurations.
+
+9. Optionally, if you encountered any issues during the Docker build, you can revisit the interactive shell inside the container for further debugging.
+
+10. After running Wally, you can check the results and the generated PNG or XDOT graph output, as explained in the README.
+
 
 ## Wally's fanciest features
 
@@ -132,11 +185,11 @@ Possible Paths: 6
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/"
 ```
 
-Where `-f` defines a filter for the call stack search function. If you don't do this, Wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests. 
+Where `-f` defines a filter for the call stack search function. If you don't do this, wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests.
 
-If using `-f` is not enough and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `-l` and an integer to limit the number of recursive calls Wally makes when mapping call paths. This will limit the paths you see in the output, but using a high enough number should return helpful paths still. Experiment with `-l`, `-f`, or both to get the results you need or expect.
+If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `-l` and an integer to limit the number of recursive calls Wally makes when mapping call paths. This will limit the paths you see in the output, but using a high enough number should return helpful paths still. Experiment with `-l`, `-f`, or both to get the results you need or expect.
 
-### PNG and XDOT Graph output 
+### PNG and XDOT Graph output
 
 When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG or XDOT containing a Graphviz-based graph of the call stacks. For example, running:
 
@@ -164,6 +217,8 @@ You can add logging statements as needed during development in any function with
 
 ## Troubleshooting
 
+At the moment, wally will often give you duplicate stack paths, where you'd notice a path of, say, A->B->C is repeated a couple of times or more. Based on my testing and debugging this is a drawback of the [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.16.1/go/callgraph/cha) algorithm from Go's `callgraph` package, which wally uses for the call stack path functionality. I am experimenting with other available algorithms in `go/callgraph/` to determine what the best option to minimize such issues (while getting accurate call stacks) could be and will update wally's code accordingly. In the case that we stick to the `cha` algorithm, I will write code to filter duplicates.
+
 ### When running in SSA mode, I get findings with no enclosed functions reported
 
 This is often caused by issues in the target code base. Make sure you are able to build the target codebase. You may want to run `go build` and fix any issues reported by the compiler. Then, run wally again against it.
@@ -174,4 +229,4 @@ See the section on [Filtering call path analysis](###Filtering-call-path-analysi
 
 ## Contributing
 
-Feel free to open issues and send PRs.
+Feel free to open issues and send PRs. Please.
