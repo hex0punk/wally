@@ -1,10 +1,12 @@
 package reporter
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
 	"log"
+	"os"
 	"strings"
 	"wally/match"
 )
@@ -34,7 +36,13 @@ func PrintMach(match match.RouteMatch) {
 		}
 		fmt.Printf("	%s: %s\n", k, v)
 	}
-	fmt.Println("Enclosed by: ", match.EnclosedBy)
+
+	if match.SSA != nil && match.SSA.EnclosedByFunc != nil {
+		fmt.Println("Enclosed by: ", match.SSA.EnclosedByFunc.String())
+	} else {
+		fmt.Println("Enclosed by: ", match.EnclosedBy)
+	}
+	
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths) > 0 {
 		if match.SSA.RecLimited {
@@ -53,6 +61,31 @@ func PrintMach(match match.RouteMatch) {
 	fmt.Println()
 }
 
+func PrintJson(matches []match.RouteMatch, filename string) error {
+	jsonOutput, err := json.Marshal(matches)
+	if err != nil {
+		return err
+	}
+
+	if filename != "" {
+		// Create a file named "example.txt"
+		file, err := os.Create(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+
+		// Write data to the file
+		_, err = file.Write(jsonOutput)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		fmt.Println(string(jsonOutput))
+	}
+	return nil
+}
+
 // TODO: Move this to a new package dedicated to graphing, or in this same package but in a separate file
 func GenerateGraph(matches []match.RouteMatch, path string) {
 	g := graphviz.New()
@@ -61,12 +94,6 @@ func GenerateGraph(matches []match.RouteMatch, path string) {
 		log.Fatal(err)
 	}
 	for _, match := range matches {
-		m, err := graph.CreateNode(match.Indicator.Package + "." + match.Indicator.Function)
-		if err != nil {
-			log.Fatal(err)
-		}
-		m = m.SetColor("red").SetFillColor("blue").SetShape("diamond")
-
 		for _, paths := range match.SSA.CallPaths {
 			var prev *cgraph.Node
 			for i := 0; i < len(paths); i++ {
@@ -75,10 +102,7 @@ func GenerateGraph(matches []match.RouteMatch, path string) {
 					if err != nil {
 						log.Fatal(err)
 					}
-					_, err := graph.CreateEdge("", prev, m)
-					if err != nil {
-						log.Fatal(err)
-					}
+					prev = prev.SetColor("red").SetFillColor("blue").SetShape("diamond")
 				} else {
 					newNode, err := graph.CreateNode(paths[i])
 					if err != nil {

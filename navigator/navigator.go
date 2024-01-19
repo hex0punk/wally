@@ -220,8 +220,10 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 func (n *Navigator) SSAPkgFromTypesPackage(pkg *types.Package) *ssa.Package {
 	for _, rpkg := range n.SSA.Packages {
-		if rpkg != nil && rpkg.Pkg != nil && rpkg.Pkg.String() == pkg.String() {
-			return rpkg
+		if rpkg != nil && rpkg.Pkg != nil {
+			if rpkg.Pkg.String() == pkg.String() {
+				return rpkg
+			}
 		}
 	}
 	return nil
@@ -290,6 +292,12 @@ func File(pass *analysis.Pass, pos token.Pos) *ast.File {
 	return m[pass.Fset.File(pos)]
 }
 
-func (n *Navigator) PrintResults() {
-	reporter.PrintResults(n.RouteMatches)
+func (n *Navigator) PrintResults(format string, fileName string) {
+	if format == "json" {
+		if err := reporter.PrintJson(n.RouteMatches, fileName); err != nil {
+			n.Logger.Error("Error printing to json", "error", err.Error())
+		}
+	} else {
+		reporter.PrintResults(n.RouteMatches)
+	}
 }

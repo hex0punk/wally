@@ -97,13 +97,16 @@ func GetName(e ast.Expr) string {
 	}
 }
 
+// TODO: Lots of repeated code that we can refactor here
+// Further, this is likely not sufficient if used for more general purposes (outside wally) as
+// there are parts of some statements (i.e. a ForStmt Post) that are not handled here
 func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 	var result []*ast.CallExpr
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
 		ce := callExprFromExpr(s.X)
 		if ce != nil {
-			result = append(result, ce)
+			result = append(result, ce...)
 		}
 	case *ast.SwitchStmt:
 		for _, iclause := range s.Body.List {
@@ -118,7 +121,7 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 	case *ast.IfStmt:
 		condCe := callExprFromExpr(s.Cond)
 		if condCe != nil {
-			result = append(result, condCe)
+			result = append(result, condCe...)
 		}
 		if s.Init != nil {
 			initCe := GetExprsFromStmt(s.Init)
@@ -147,24 +150,67 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 		for _, rhs := range s.Rhs {
 			ce := callExprFromExpr(rhs)
 			if ce != nil {
-				result = append(result, ce)
+				result = append(result, ce...)
 			}
 		}
 		for _, lhs := range s.Lhs {
 			ce := callExprFromExpr(lhs)
 			if ce != nil {
-				result = append(result, ce)
+				result = append(result, ce...)
 			}
 		}
-
+	case *ast.ReturnStmt:
+		for _, retResult := range s.Results {
+			ce := callExprFromExpr(retResult)
+			if ce != nil {
+				result = append(result, ce...)
+			}
+		}
+	case *ast.ForStmt:
+		ces := GetExprsFromStmt(s.Body)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
+	case *ast.RangeStmt:
+		ces := GetExprsFromStmt(s.Body)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
+	case *ast.SelectStmt:
+		for _, clause := range s.Body.List {
+			//ces := GetExprsFromStmt(clause)
+			if cc, ok := clause.(*ast.CommClause); ok {
+				for _, stm := range cc.Body {
+					bodyExps := GetExprsFromStmt(stm)
+					if bodyExps != nil && len(bodyExps) > 0 {
+						result = append(result, bodyExps...)
+					}
+				}
+			}
+		}
+	case *ast.LabeledStmt:
+		ces := GetExprsFromStmt(s.Stmt)
+		if ces != nil && len(ces) > 0 {
+			result = append(result, ces...)
+		}
 	}
 	return result
 }
 
-func callExprFromExpr(e ast.Expr) *ast.CallExpr {
+func callExprFromExpr(e ast.Expr) []*ast.CallExpr {
 	switch e := e.(type) {
 	case *ast.CallExpr:
-		return e
+		// This loop makes sure we obtain CEs when in the body function literal used
+		// as arguments to CEs. See https://github.com/hashicorp/nomad/blob/d34788896f8892377a9039b81a65abd7a913b3cc/nomad/csi_endpoint.go#L1633
+		// for an example
+		for _, v := range e.Args {
+			if rr, ok := v.(*ast.FuncLit); ok {
+				return GetExprsFromStmt(rr.Body)
+			}
+		}
+		return append([]*ast.CallExpr{}, e)
+	case *ast.FuncLit:
+		return GetExprsFromStmt(e.Body)
 	}
 	return nil
 }
