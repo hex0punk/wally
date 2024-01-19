@@ -15,6 +15,14 @@ func (*GlobalVar) AFact() {}
 
 func (*GlobalVar) String() string { return "GlobalVar" }
 
+type LocalVar struct {
+	Vals []string
+}
+
+func (*LocalVar) AFact() {}
+
+func (*LocalVar) String() string { return "LocalVar" }
+
 type Checker struct {
 	Analyzer *analysis.Analyzer
 	//pkg          		*packages.Package

@@ -156,6 +156,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
 		(*ast.GenDecl)(nil),
+		(*ast.AssignStmt)(nil),
 	}
 
 	results := []match.RouteMatch{}
@@ -165,6 +166,10 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
 		if gen, ok := node.(*ast.GenDecl); ok {
 			n.RecordGlobals(gen, pass)
+		}
+
+		if stmt, ok := node.(*ast.AssignStmt); ok {
+			n.RecordLocals(stmt, pass)
 		}
 
 		ce, ok := node.(*ast.CallExpr)
@@ -257,8 +262,10 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	}
 }
 
+// TODO: TEMP - test this but with a parm for other types such as assighmentStmt, etc
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 	for _, spec := range gen.Specs {
+
 		s, ok := spec.(*ast.ValueSpec)
 		if !ok {
 			continue
@@ -268,8 +275,10 @@ func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 			if res != "" {
 				continue
 			}
+
 			o1 := pass.TypesInfo.ObjectOf(s.Names[k])
 			if tt, ok := o1.(*types.Var); ok {
+				// If same scope level as pkg
 				if tt.Parent() == tt.Pkg().Scope() {
 					// Scope level
 					gv := new(checker.GlobalVar)
@@ -277,6 +286,39 @@ func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 					pass.ExportObjectFact(o1, gv)
 				}
 			}
+		}
+	}
+}
+
+func (n *Navigator) RecordLocals(gen *ast.AssignStmt, pass *analysis.Pass) {
+	for idx, e := range gen.Rhs {
+		idt, ok := gen.Lhs[idx].(*ast.Ident)
+		if !ok {
+			return
+		}
+
+		o1 := pass.TypesInfo.ObjectOf(idt)
+		if !wallylib.IsLocal(o1) {
+			return
+		}
+
+		res := wallylib.GetValueFromExp(e, pass)
+		if res == "" || res == "\"\"" {
+			return
+		}
+
+		var fact checker.LocalVar
+		gv := new(checker.LocalVar)
+		pass.ImportObjectFact(o1, &fact)
+
+		if fact.Vals != nil {
+			gv.Vals = fact.Vals
+			gv.Vals = append(gv.Vals, res)
+			pass.ExportObjectFact(o1, gv)
+
+		} else {
+			gv.Vals = append(gv.Vals, res)
+			pass.ExportObjectFact(o1, gv)
 		}
 	}
 }

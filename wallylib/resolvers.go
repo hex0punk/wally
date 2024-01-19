@@ -87,6 +87,25 @@ func GetValueFromExp(exp ast.Expr, pass *analysis.Pass) string {
 		if con, ok := o1.(*types.Const); ok {
 			return con.Val().String()
 		}
+
+		// Likely a local var
+		if con, ok := o1.(*types.Var); ok {
+			var fact checker.LocalVar
+			if pass.ImportObjectFact(o1, &fact) {
+				var result string
+				for i, v := range fact.Vals {
+					if i == len(fact.Vals)-1 {
+						result += " " + v
+						continue
+					}
+					result += v + " || "
+				}
+				return result
+			}
+			// A non-constant value, best effort (without ssa navigator) is to
+			// return the variable name
+			return fmt.Sprintf("<var %s.%s>", node.Name, con.Id())
+		}
 	case *ast.CompositeLit: // i.e. []string{"POST"}
 		vals := ""
 		for _, lit := range node.Elts {
