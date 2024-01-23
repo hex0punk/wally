@@ -1,0 +1,24 @@
+{
+  "dependencies": {
+    "cytoscape": "^3.28.1",
+    "graphology": "^0.25.4",
+    "graphology-layout": "^0.6.1",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "graphology-layout-noverlap": "^0.4.2",
+    "sigma": "^3.0.0-beta.4"
+  },
+  "name": "wally",
+  "version": "1.0.0",
+  "main": "index.js",
+  "devDependencies": {
+    "parcel-bundler": "^1.12.5",
+    "typescript": "^5.3.3"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "parcel build index.html"
+  },
+  "author": "Alex Useche",
+  "license": "ISC",
+  "description": ""
+}
