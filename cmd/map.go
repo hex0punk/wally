@@ -43,7 +43,7 @@ func init() {
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
 	mapCmd.PersistentFlags().IntVarP(&limiter, "rec-limit", "l", 0, "Limit the max number of recursive calls wally makes when mapping call stacks")
 	mapCmd.PersistentFlags().BoolVar(&printNodes, "print-nodes", false, "Print the position of call graph paths rather than node")
-	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json")
+	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json, csv")
 	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")
 }
 
