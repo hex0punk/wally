@@ -1,6 +1,13 @@
 package wallylib
 
-import "go/types"
+import (
+	"fmt"
+	"go/token"
+	"go/types"
+	"golang.org/x/tools/go/ssa"
+	"os"
+	"path/filepath"
+)
 
 func DedupPaths(paths [][]string) [][]string {
 	result := [][]string{}
@@ -42,4 +49,12 @@ func IsLocal(obj types.Object) bool {
 		depth++
 	}
 	return depth >= 4
+}
+
+func GetFormattedPos(pkg *ssa.Package, pos token.Pos) string {
+	fs := pkg.Prog.Fset
+	p := fs.Position(pos)
+	currentPath, _ := os.Getwd()
+	relPath, _ := filepath.Rel(currentPath, p.Filename)
+	return fmt.Sprintf("%s:%d:%d", relPath, p.Line, p.Column)
 }

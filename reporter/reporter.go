@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"github.com/goccy/go-graphviz"
@@ -42,7 +43,7 @@ func PrintMach(match match.RouteMatch) {
 	} else {
 		fmt.Println("Enclosed by: ", match.EnclosedBy)
 	}
-	
+
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
 	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths) > 0 {
 		if match.SSA.RecLimited {
@@ -83,6 +84,36 @@ func PrintJson(matches []match.RouteMatch, filename string) error {
 	} else {
 		fmt.Println(string(jsonOutput))
 	}
+	return nil
+}
+
+func WriteCSVFile(matches []match.RouteMatch, filePath string) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("error creating file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Writing the header of the CSV file
+	if err := writer.Write([]string{"source", "target"}); err != nil {
+		return fmt.Errorf("error writing header to CSV: %v", err)
+	}
+
+	for _, match := range matches {
+		if match.SSA != nil && match.SSA.CallPaths != nil {
+			for _, paths := range match.SSA.CallPaths {
+				for i := 0; i < len(paths)-1; i++ {
+					if err := writer.Write([]string{paths[i], paths[i+1]}); err != nil {
+						return fmt.Errorf("error writing record to CSV: %v", err)
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

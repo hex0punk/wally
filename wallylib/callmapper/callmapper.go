@@ -3,8 +3,7 @@ package callmapper
 import (
 	"fmt"
 	"golang.org/x/tools/go/callgraph"
-	"os"
-	"path/filepath"
+	"golang.org/x/tools/go/ssa"
 	"strings"
 	"wally/match"
 	"wally/wallylib"
@@ -33,7 +32,9 @@ func (cm *CallMapper) AllPaths(s *callgraph.Node, options Options) [][]string {
 	paths := [][]string{}
 	path := []string{}
 
-	cm.DFS(s, visited, path, &paths, options)
+	basePos := wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())
+	path = append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), basePos))
+	cm.DFS(s, visited, path, &paths, options, nil)
 
 	// TODO: We have to do this given that the cha callgraph algorithm seems to return duplicate paths at times.
 	// I need to test other algorithms available to see if I get better results (without duplicate paths)
@@ -42,19 +43,14 @@ func (cm *CallMapper) AllPaths(s *callgraph.Node, options Options) [][]string {
 	return res
 }
 
-func (cm *CallMapper) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string, options Options) {
+func (cm *CallMapper) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string, options Options, site ssa.CallInstruction) {
 	visited[s] = true
-	if !strings.HasSuffix(s.String(), "$bound") {
-		if s.Func != nil {
-			if options.PrintNodes || s.Func.Package() == nil {
-				path = append(path, s.String())
-			} else {
-				fs := s.Func.Package().Prog.Fset
-				p := fs.Position(s.Func.Pos())
-				currentPath, _ := os.Getwd()
-				relPath, _ := filepath.Rel(currentPath, p.Filename)
-				path = append(path, fmt.Sprintf("[%s] %s:%d:%d", s.Func.Name(), relPath, p.Line, p.Column))
-			}
+	if site != nil {
+		if options.PrintNodes || s.Func.Package() == nil {
+			path = append(path, s.String())
+		} else {
+			fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
+			path = append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), fp))
 		}
 	}
 
@@ -77,7 +73,7 @@ func (cm *CallMapper) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, p
 				}
 			}
 			if e.Caller != nil && !visited[e.Caller] {
-				cm.DFS(e.Caller, visited, path, paths, options)
+				cm.DFS(e.Caller, visited, path, paths, options, e.Site)
 			}
 		}
 	}
