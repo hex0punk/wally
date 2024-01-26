@@ -339,6 +339,10 @@ func (n *Navigator) PrintResults(format string, fileName string) {
 		if err := reporter.PrintJson(n.RouteMatches, fileName); err != nil {
 			n.Logger.Error("Error printing to json", "error", err.Error())
 		}
+	} else if format == "csv" {
+		if err := reporter.WriteCSVFile(n.RouteMatches, fileName); err != nil {
+			n.Logger.Error("Error printing CSV", "error", err.Error())
+		}
 	} else {
 		reporter.PrintResults(n.RouteMatches)
 	}
