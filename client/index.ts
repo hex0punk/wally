@@ -1,10 +1,11 @@
-import { Cosmograph } from '@cosmograph/cosmograph'
+import { Cosmograph,  CosmographSearch } from '@cosmograph/cosmograph'
 import jsonData from "./nomad-json.json";
 
 // Types
 type Node = {
     id: string;
     color: string;
+    green: string;
     label: string;
     x?: number;
     y?: number;
@@ -13,6 +14,7 @@ type Node = {
   type Link = {
     source: string;
     target: string;
+    color: string;
   }
 
 
@@ -21,6 +23,8 @@ const data: any = jsonData;
 
 let nodes: Node[] = [];
 let links: Link[] = [];
+let clickedNodes: string[] = [];
+let clickedNodeId: string;
 
 data.findings.forEach((finding: any) => {
     finding.Paths.forEach((paths: string[]) => {
@@ -50,13 +54,13 @@ function addNodeIfNotExist(nodeId: string, color: string) {
     if (!nodeExists(nodeId)) {
         let label = extractFuncFromId(nodeId)
         label = label != null ? label : ""
-        nodes.push({ id: nodeId, label: label, color: color });
+        nodes.push({ id: nodeId, label: label, color: color, green: "green" });
     }
 }
 
 function addEdgeIfNotExist(source: string, target: string) {
     if (!edgeExists(source, target)) {
-        links.push({ source, target });
+        links.push({ source, target, color: "#8C8C8C" });
     }
 }
 
@@ -65,30 +69,153 @@ function extractFuncFromId(nodeId: string): string | null {
     return match ? match[1] : null;
 }
 
+function findLinksByNodeId(nodeId: string): Link[] {
+    return links.filter(link => link.source === nodeId || link.target === nodeId);
+}
+
+function getClickedNodeColor(node: Node) {
+    // Define the default color and the color for a clicked node
+    console.log("called")
+    const defaultColor = node.color
+    const clickedColor = 'green'; // Red
+  
+    if (clickedNodeId == node.id) {
+        console.log("yep")
+    // Check if the current node is the one that was clicked
+    // if (clickedNodeIdList.includes(node.id)) {
+      return clickedColor;
+    } else {
+      return defaultColor;
+    }
+}
+
+function getClickedNodesColor(node: Node) {
+    // Define the default color and the color for a clicked node
+    console.log("called")
+    const defaultColor = node.color
+    const clickedColor = 'green'; // Red
+  
+    // if (clickedNodeId == node.id) {
+        console.log("yep")
+    // Check if the current node is the one that was clicked
+    if (clickedNodes.includes(node.id)) {
+      return clickedColor;
+    } else {
+      return defaultColor;
+    }
+}
+
+
+function findAllConnectedNodes(nodeId: string): string[] {
+    let visited = new Set(); // To keep track of visited nodes
+    let stack = [nodeId]; // Use a stack for depth-first search
+
+    while (stack.length > 0) {
+        let current = stack.pop();
+
+        // Add the current node to the visited set
+        visited.add(current);
+
+        // Find all links where the current node is a source or target
+        let connectedLinks = findLinksByNodeId(current);
+        connectedLinks.forEach(link => {
+            // Check both the source and target of each link
+            if (!visited.has(link.source)) {
+                stack.push(link.source);
+            }
+            if (!visited.has(link.target)) {
+                stack.push(link.target);
+            }
+        });
+    }
+
+    // Convert the Set of visited nodes to an Array and return
+    return Array.from(visited);
+}
+
+// function findLinksByNodeId(nodeId: string): Link[] {
+//     return links.filter(link => link.source === nodeId || link.target === nodeId);
+// }
+
+
+function findAllPrecedingNodes(nodeId: string): string[] {
+    let visited = new Set(); // To keep track of visited nodes
+    let stack = [nodeId]; // Start with the target node
+
+    while (stack.length > 0) {
+        let current = stack.pop();
+
+        // Add the current node to the visited set
+        visited.add(current);
+
+        // Find all links where the current node is a target
+        let incomingLinks = links.filter(link => link.target === current);
+        incomingLinks.forEach(link => {
+            // Add the source node of each link to the stack
+            if (!visited.has(link.source)) {
+                stack.push(link.source);
+            }
+        });
+    }
+
+    visited.delete(nodeId); // Remove the initial node from the result
+    return Array.from(visited); // Convert the Set of visited nodes to an Array and return
+}
+
 // const canvas = document.getElementById("container")
 
-const canvas = document.createElement('div')
-document.body.appendChild(canvas)
+const cosmographContainer = document.createElement('div')
+document.body.appendChild(cosmographContainer)
 
-const config = {
+const cosmograph = new Cosmograph<Node, Link>(cosmographContainer)
+
+let config = {
     // backgroundColor: "#151515",
-    nodeSize: 3,
-    nodeColor: (n, i) => n.color,
-    linkWidth: 0.5,
-    linkColor: "#8C8C8C",
-    linkArrows: true,
+    nodeSize: 2.0,
+    nodeColor: n => getClickedNodesColor(n),
+    // linkWidth: 0.5,
+    linkColor: (l, i) => l.color,
+    // linkArrows: true,
+    // linkVisibilityDistance: [100, 150],
     nodeLabelAccessor: n => n.label,
-    simulation: {
-      repulsion: 0.5,
-    },
+    nodeLabelColor: 'white',
+    simulationRepulsion: 1.6,
+    simulationLinkDistance: 10,
+    nodeLabelClassName: "css-label--label",
     // renderLinks: true,
-    events: {
-      onClick: node => { console.log('Clicked node: ', node) },
+    onClick: (node, i) => { 
+        let conn = findAllPrecedingNodes(node.id)
+        clickedNodes = conn
+        console.log(conn.length)
+
+        config.nodeColor = (n) => getClickedNodesColor(n)
+        clickedNodeId = node.id
+        console.log('Clicked node val: ', node) 
+        cosmograph.setConfig(config)
     },
+    // disableSimulation: true
   }
   
 
-const cosmograph = new Cosmograph(canvas)
+
+const searchContainer = document.createElement('div')
+document.body.appendChild(searchContainer)
+
+
+const search = new CosmographSearch<Node, Link>(cosmograph, searchContainer)
+
 cosmograph.setConfig(config)
 
+const searchConfig = {
+    maxVisibleItems: 5,
+    events: {
+      onSelect: (node) => {
+            console.log('Selected Node: ', node.id)
+        }
+    }
+  }
+    
+search.setConfig(searchConfig)
+
 cosmograph.setData(nodes, links)
+// search.setData(nodes)
