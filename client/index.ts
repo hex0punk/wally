@@ -34,7 +34,11 @@ data.findings.forEach((finding: any) => {
                 prev = path;
                 addNodeIfNotExist(path, "#984040");
             } else {
-                addNodeIfNotExist(path, "#4287f5");
+                if (i == paths.length - 1) {
+                    addNodeIfNotExist(path, "purple");
+                } else {
+                    addNodeIfNotExist(path, "#4287f5");
+                }
                 addEdgeIfNotExist(path, prev);
                 prev = path;
             }
@@ -91,6 +95,9 @@ function getClickedNodeColor(node: Node) {
 
 function getClickedNodesColor(node: Node) {
     // Define the default color and the color for a clicked node
+    if (node.color == "purple" || node.color == "#984040") {
+        return node.color
+    }
     console.log("called")
     const defaultColor = node.color
     const clickedColor = 'green'; // Red
@@ -169,12 +176,22 @@ document.body.appendChild(cosmographContainer)
 
 const cosmograph = new Cosmograph<Node, Link>(cosmographContainer)
 
+// Now set the color of the link
+// If the target is selected, then the link should be green
+function getLinkColor(link: Link) {
+    let nt = clickedNodes.find(n => link.target === n)
+    if (nt != undefined && nt != null) {
+        return "green";
+    }
+    return link.color
+}
+
 let config = {
     // backgroundColor: "#151515",
     nodeSize: 2.0,
     nodeColor: n => getClickedNodesColor(n),
     // linkWidth: 0.5,
-    linkColor: (l, i) => l.color,
+    linkColor: (l) => getLinkColor(l),
     // linkArrows: true,
     // linkVisibilityDistance: [100, 150],
     nodeLabelAccessor: n => n.label,
@@ -186,9 +203,11 @@ let config = {
     onClick: (node, i) => { 
         let conn = findAllPrecedingNodes(node.id)
         clickedNodes = conn
+        clickedNodes.push(node.id)
         console.log(conn.length)
 
         config.nodeColor = (n) => getClickedNodesColor(n)
+        config.linkColor = (l) => getLinkColor(l)
         clickedNodeId = node.id
         console.log('Clicked node val: ', node) 
         cosmograph.setConfig(config)
