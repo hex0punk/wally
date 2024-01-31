@@ -11,7 +11,7 @@ import (
 )
 
 type RouteMatch struct {
-	Id         string
+	MatchId    string
 	Indicator  indicator.Indicator // It should be FuncInfo instead
 	Params     map[string]string
 	Pos        token.Position
@@ -30,7 +30,7 @@ type SSAContext struct {
 
 func NewRouteMatch(indicator indicator.Indicator, pos token.Position) RouteMatch {
 	return RouteMatch{
-		Id:        uuid.New().String(),
+		MatchId:   uuid.New().String(),
 		Indicator: indicator,
 		Pos:       pos,
 		SSA:       &SSAContext{},
@@ -65,6 +65,7 @@ func (r *RouteMatch) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(struct {
+		MatchId    string
 		Indicator  indicator.Indicator
 		Params     map[string]string
 		Pos        string
@@ -72,6 +73,7 @@ func (r *RouteMatch) MarshalJSON() ([]byte, error) {
 		RecLimited bool
 		Paths      [][]string
 	}{
+		MatchId:    r.MatchId,
 		Indicator:  r.Indicator,
 		Params:     params,
 		Pos:        r.Pos.String(),

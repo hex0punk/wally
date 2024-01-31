@@ -24,6 +24,7 @@ func PrintResults(matches []match.RouteMatch) {
 
 func PrintMach(match match.RouteMatch) {
 	fmt.Println("===========MATCH===============")
+	fmt.Println("ID: ", match.MatchId)
 	fmt.Println("Indicator ID: ", match.Indicator.Id)
 	fmt.Println("Package: ", match.Indicator.Package)
 	fmt.Println("Function: ", match.Indicator.Function)
@@ -69,7 +70,6 @@ func PrintJson(matches []match.RouteMatch, filename string) error {
 	}
 
 	if filename != "" {
-		// Create a file named "example.txt"
 		file, err := os.Create(filename)
 		if err != nil {
 			log.Fatal(err)
