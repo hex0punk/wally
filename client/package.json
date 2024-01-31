@@ -6,11 +6,13 @@
   "version": "1.0.0",
   "devDependencies": {
     "parcel": "^2.11.0",
+    "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "parcel build index.html"
+    "build": "parcel build src/index.html",
+    "watch": "parcel watch src/index.html"
   },
   "author": "Alex Useche",
   "license": "ISC",

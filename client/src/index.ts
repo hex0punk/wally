@@ -1,5 +1,5 @@
 import { Cosmograph,  CosmographSearch } from '@cosmograph/cosmograph'
-import jsonData from "./nomad-json.json";
+import jsonData from "../nomad-json.json";
 
 // Types
 type Node = {
@@ -171,9 +171,7 @@ function findAllPrecedingNodes(nodeId: string): string[] {
 
 // const canvas = document.getElementById("container")
 
-const cosmographContainer = document.createElement('div')
-document.body.appendChild(cosmographContainer)
-
+const cosmographContainer = document.getElementById("cosmograph")
 const cosmograph = new Cosmograph<Node, Link>(cosmographContainer)
 
 // Now set the color of the link
@@ -187,7 +185,7 @@ function getLinkColor(link: Link) {
 }
 
 let config = {
-    // backgroundColor: "#151515",
+    backgroundColor: "#0f172a",
     nodeSize: 2.0,
     nodeColor: n => getClickedNodesColor(n),
     // linkWidth: 0.5,
@@ -201,15 +199,18 @@ let config = {
     nodeLabelClassName: "css-label--label",
     // renderLinks: true,
     onClick: (node, i) => { 
-        let conn = findAllPrecedingNodes(node.id)
-        clickedNodes = conn
-        clickedNodes.push(node.id)
-        console.log(conn.length)
+        if (node == undefined) {
+            clickedNodes = []
+            clickedNodeId = ""
+        } else {
+            let conn = findAllPrecedingNodes(node.id)
+            clickedNodes = conn
+            clickedNodes.push(node.id)
+            clickedNodeId = node.id
+        }
 
         config.nodeColor = (n) => getClickedNodesColor(n)
         config.linkColor = (l) => getLinkColor(l)
-        clickedNodeId = node.id
-        console.log('Clicked node val: ', node) 
         cosmograph.setConfig(config)
     },
     // disableSimulation: true
@@ -217,9 +218,7 @@ let config = {
   
 
 
-const searchContainer = document.createElement('div')
-document.body.appendChild(searchContainer)
-
+const searchContainer = document.getElementById("cosmosearch")
 
 const search = new CosmographSearch<Node, Link>(cosmograph, searchContainer)
 
