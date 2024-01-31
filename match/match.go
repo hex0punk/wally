@@ -2,6 +2,7 @@ package match
 
 import (
 	"encoding/json"
+	"github.com/google/uuid"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/callgraph"
@@ -10,6 +11,7 @@ import (
 )
 
 type RouteMatch struct {
+	Id         string
 	Indicator  indicator.Indicator // It should be FuncInfo instead
 	Params     map[string]string
 	Pos        token.Position
@@ -28,6 +30,7 @@ type SSAContext struct {
 
 func NewRouteMatch(indicator indicator.Indicator, pos token.Position) RouteMatch {
 	return RouteMatch{
+		Id:        uuid.New().String(),
 		Indicator: indicator,
 		Pos:       pos,
 		SSA:       &SSAContext{},
