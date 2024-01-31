@@ -1,5 +1,5 @@
 import { Cosmograph,  CosmographSearch } from '@cosmograph/cosmograph'
-import jsonData from "../nomad-json.json";
+import jsonData from "../nomad-json-2.json";
 
 // Types
 type Node = {
@@ -26,7 +26,7 @@ let links: Link[] = [];
 let clickedNodes: string[] = [];
 let clickedNodeId: string;
 
-data.findings.forEach((finding: any) => {
+data.forEach((finding: any) => {
     finding.Paths.forEach((paths: string[]) => {
         let prev = "";
         paths.forEach((path, i) => {

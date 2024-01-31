@@ -65,11 +65,11 @@ func PrintMach(match match.RouteMatch) {
 func PrintJson(matches []match.RouteMatch, filename string) error {
 	jsonOutput, err := json.Marshal(matches)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 
 	if filename != "" {
-		// Create a file named "example.txt"
 		file, err := os.Create(filename)
 		if err != nil {
 			log.Fatal(err)
