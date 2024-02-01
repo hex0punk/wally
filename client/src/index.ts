@@ -1,5 +1,7 @@
 import { Cosmograph,  CosmographSearch } from '@cosmograph/cosmograph'
-import jsonData from "../nomad-json-2.json";
+import jsonData from "../nomad-json-3.json";
+
+const details = document.getElementById('details');
 
 // Types
 type Node = {
@@ -7,6 +9,7 @@ type Node = {
     color: string;
     green: string;
     label: string;
+    finding: string;
     x?: number;
     y?: number;
   }
@@ -32,19 +35,30 @@ data.forEach((finding: any) => {
         paths.forEach((path, i) => {
             if (i === 0) {
                 prev = path;
-                addNodeIfNotExist(path, "#984040");
+                addNodeIfNotExist(path, "purple", "");
             } else {
                 if (i == paths.length - 1) {
-                    addNodeIfNotExist(path, "purple");
+                    addNodeIfNotExist(path, "#984040", finding.MatchId);
                 } else {
-                    addNodeIfNotExist(path, "#4287f5");
+                    addNodeIfNotExist(path, "#4287f5", "");
                 }
-                addEdgeIfNotExist(path, prev);
+                addEdgeIfNotExist(prev, path);
                 prev = path;
             }
         });
     });
 });
+
+function getFinding(findingId: string): any {
+    // console.log("looking for", findingId)
+    let res : any;
+    data.forEach((finding: any) => {
+        if (findingId == finding.MatchId) {
+            res = finding
+        }
+    })
+    return res
+}
 
 function nodeExists(nodeId: string): boolean {
     return nodes.some(node => node.id === nodeId);
@@ -54,11 +68,22 @@ function edgeExists(source: string, target: string): boolean {
     return links.some(link => link.source === source && link.target === target);
 }
 
-function addNodeIfNotExist(nodeId: string, color: string) {
+function addNodeIfNotExist(nodeId: string, color: string, findingId: string) {
     if (!nodeExists(nodeId)) {
         let label = extractFuncFromId(nodeId)
         label = label != null ? label : ""
-        nodes.push({ id: nodeId, label: label, color: color, green: "green" });
+        nodes.push({ id: nodeId, label: label, color: color, green: "green", finding: findingId });
+    } else {
+        let node = nodes.find(node => node.id === nodeId)
+        if (node != null) {
+            if (color == "#4287f5" && node.color == "purple") {
+                node.color = "#FFCE85"
+            }
+
+            if (node.color == "#4287f5" && color == "purple") {
+                node.color = "#FFCE85"
+            }
+        }
     }
 }
 
@@ -79,12 +104,10 @@ function findLinksByNodeId(nodeId: string): Link[] {
 
 function getClickedNodeColor(node: Node) {
     // Define the default color and the color for a clicked node
-    console.log("called")
     const defaultColor = node.color
     const clickedColor = 'green'; // Red
   
     if (clickedNodeId == node.id) {
-        console.log("yep")
     // Check if the current node is the one that was clicked
     // if (clickedNodeIdList.includes(node.id)) {
       return clickedColor;
@@ -94,21 +117,22 @@ function getClickedNodeColor(node: Node) {
 }
 
 function getClickedNodesColor(node: Node) {
-    // Define the default color and the color for a clicked node
-    if (node.color == "purple" || node.color == "#984040") {
-        return node.color
-    }
-    console.log("called")
     const defaultColor = node.color
     const clickedColor = 'green'; // Red
   
     // if (clickedNodeId == node.id) {
-        console.log("yep")
     // Check if the current node is the one that was clicked
     if (clickedNodes.includes(node.id)) {
-      return clickedColor;
+        return node.color
     } else {
-      return defaultColor;
+        if (clickedNodes.length > 0) {
+            return [0, 0, 0, 0]
+        } else {
+            if (node.color == "purple" || node.color == "#984040") {
+                return node.color
+            }
+            return defaultColor;
+        }
     }
 }
 
@@ -181,7 +205,22 @@ function getLinkColor(link: Link) {
     if (nt != undefined && nt != null) {
         return "green";
     }
+    if (clickedNodes.length > 0) {
+        return [0, 0, 0, 0]
+    } 
     return link.color
+}
+
+function getLabel(node: Node) {
+    if (clickedNodes.includes(node.id)) {
+        return node.id
+    } else {
+        if (clickedNodes.length > 0) {
+            return ''
+        } else {
+            return node.label;
+        }
+    }
 }
 
 let config = {
@@ -192,21 +231,36 @@ let config = {
     linkColor: (l) => getLinkColor(l),
     // linkArrows: true,
     // linkVisibilityDistance: [100, 150],
-    nodeLabelAccessor: n => n.label,
+    nodeLabelAccessor: n => getLabel(n),
     nodeLabelColor: 'white',
     simulationRepulsion: 1.6,
     simulationLinkDistance: 10,
     nodeLabelClassName: "css-label--label",
     // renderLinks: true,
     onClick: (node, i) => { 
+        // console.log(node)
         if (node == undefined) {
             clickedNodes = []
             clickedNodeId = ""
+            detailsOff()
         } else {
             let conn = findAllPrecedingNodes(node.id)
             clickedNodes = conn
             clickedNodes.push(node.id)
             clickedNodeId = node.id
+
+            console.log(JSON.stringify(clickedNodes))
+            if (node.finding != "") {
+                console.log("here")
+                let finding = getFinding(node.finding)
+                setLeftSide(finding)
+                // let out = document.getElementById("output")
+                // // console.log("got finding ", finding)
+                // if (out != null) {
+                //     console.log("setting out")
+                //     out.textContent = finding
+                // }
+            }
         }
 
         config.nodeColor = (n) => getClickedNodesColor(n)
@@ -216,11 +270,33 @@ let config = {
     // disableSimulation: true
   }
   
+function detailsOn() {
+    if (details != null && details.classList.contains('invisible')) {
+        details.classList.remove('invisible');
+    }
 
+}
+
+function detailsOff() {
+    if (details != null && !details.classList.contains('invisible')) {
+        details.classList.add('invisible');
+    }
+}
+
+function setLeftSide(finding: any) {
+    // console.log(finding)
+    detailsOn()
+    document.getElementById('pkg').textContent = finding.Indicator.Package
+    document.getElementById('func').textContent = finding.Indicator.Function
+    document.getElementById('params').textContent = JSON.stringify(finding.Indicator.Params)
+    document.getElementById('enclosedBy').textContent = finding.EnclosedBy
+    document.getElementById('pos').textContent = finding.Pos
+    document.getElementById('pathNum').textContent = finding.Paths.length
+}
 
 const searchContainer = document.getElementById("cosmosearch")
 
-const search = new CosmographSearch<Node, Link>(cosmograph, searchContainer)
+const search = new CosmographSearch<Node, Link>(cosmograph,searchContainer)
 
 cosmograph.setConfig(config)
 
@@ -229,7 +305,7 @@ const searchConfig = {
     events: {
       onSelect: (node) => {
             console.log('Selected Node: ', node.id)
-        }
+        }   
     }
   }
     
