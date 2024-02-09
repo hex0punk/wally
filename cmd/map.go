@@ -6,18 +6,20 @@ import (
 	"wally/indicator"
 	"wally/navigator"
 	"wally/reporter"
+	"wally/server"
 	"wally/wallylib/callmapper"
 )
 
 var (
-	paths      []string
-	runSSA     bool
-	filter     string
-	graph      string
-	limiter    int
-	printNodes bool
-	format     string
-	outputFile string
+	paths       []string
+	runSSA      bool
+	filter      string
+	graph       string
+	limiter     int
+	printNodes  bool
+	format      string
+	outputFile  string
+	serverGraph bool
 )
 
 // mapCmd represents the map command
@@ -45,6 +47,9 @@ func init() {
 	mapCmd.PersistentFlags().BoolVar(&printNodes, "print-nodes", false, "Print the position of call graph paths rather than node")
 	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json, csv")
 	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")
+
+	mapCmd.PersistentFlags().BoolVar(&serverGraph, "server", false, "Starts a server on port 1984 with output graph")
+
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
@@ -69,5 +74,9 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	if runSSA && graph != "" {
 		nav.Logger.Info("Generating graph", "graph filename", graph)
 		reporter.GenerateGraph(nav.RouteMatches, graph)
+	}
+
+	if serverGraph {
+		server.ServerCosmograph(reporter.GetJson(nav.RouteMatches))
 	}
 }
