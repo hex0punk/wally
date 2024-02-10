@@ -204,33 +204,17 @@ Next, open a browser and head to the address in the output.
 
 Graphs are generated using the [cosmograph](https://cosmograph.app/) library. Each node represents a function call in code. The colors are not random. Each color has a a different purpose to help you make good use of the graph.
 
-<div>
-  <svg width="25" height="25" style="vertical-align: middle;">
-    <circle cx="12.5" cy="12.5" r="10" fill="#984040" />
-  </svg>
-  <span style="vertical-align: middle;">Finding node. This is a node discovered via wally indicators. Every finding node is the end of a path</span>
-</div>
+![](assets/finding-node.svg)
+<span style="vertical-align: top;">Finding node. This is a node discovered via wally indicators. Every finding node is the end of a path</span>
 
-<div>
-  <svg width="25" height="25" style="vertical-align: middle;">
-    <circle cx="12.5" cy="12.5" r="10"  fill="purple" />
-  </svg>
-  <span style="vertical-align: middle;">This node is the root of a path to a finding node.</span>
-</div>
+![](assets/root-node.svg)
+<span style="vertical-align: top;">This node is the root of a path to a finding node.</span>
 
-<div>
-  <svg width="25" height="25" style="vertical-align: middle;">
-    <circle cx="12.5" cy="12.5" r="10" fill="#4287f5" />
-  </svg>
-  <span style="vertical-align: middle;">Intermediate node between a root and a finding node.</span>
-</div>
+![](assets/path-node.svg)
+<span style="vertical-align: top;">Intermediate node between a root and a finding node.</span>
 
-<div>
-  <svg width="25" height="25" style="vertical-align: middle;">
-    <circle cx="12.5" cy="12.5" r="10" fill="#FFCE85" />
-  </svg>
-  <span style="vertical-align: middle;">This node servers both as the root node to a path and an intermediary node for one or more paths</span>
-</div>
+![](assets/dual-node.svg)
+<span style="vertical-align: top;">This node servers both as the root node to a path and an intermediary node for one or more paths</span>
 
 #### Viewing paths
 
