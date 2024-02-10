@@ -6,6 +6,10 @@
 
 Wally is a static analysis tool for attack surface mapping. It automates the initial stages of threat modelling by mapping RPC and HTTP routes in Go code.
 
+## UI Demo
+
+https://github.com/hex0punk/wally/assets/1915998/2fa0b6e5-4932-4400-bf04-b0e31cb93816
+
 ## The basics
 
 ### Why is it called Wally?
