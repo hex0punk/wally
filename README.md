@@ -8,6 +8,10 @@ Wally is a static analysis tool for attack surface mapping. It automates the ini
 
 ## The basics
 
+
+https://github.com/hex0punk/wally/assets/1915998/280b47dc-db18-4bf7-9fb8-cdbc6c93ab64
+
+
 ### Why is it called Wally?
 
 Because [Wally](https://monkeyisland.fandom.com/wiki/Wally_B._Feed) is a cartographer, I like Monkey Island, and I wanted it to be called that :).
