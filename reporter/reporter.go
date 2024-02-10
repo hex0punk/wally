@@ -63,9 +63,19 @@ func PrintMach(match match.RouteMatch) {
 	fmt.Println()
 }
 
+func GetJson(matches []match.RouteMatch) []byte {
+	jsonOutput, err := json.Marshal(matches)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return jsonOutput
+}
+
 func PrintJson(matches []match.RouteMatch, filename string) error {
 	jsonOutput, err := json.Marshal(matches)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 

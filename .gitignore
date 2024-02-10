@@ -20,3 +20,8 @@ go.work
 
 wally
 .idea/
+
+.cache/
+_dist/
+node_modules/
+.parcel-cache/

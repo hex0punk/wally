@@ -6,6 +6,10 @@
 
 Wally is a static analysis tool for attack surface mapping. It automates the initial stages of threat modelling by mapping RPC and HTTP routes in Go code.
 
+## UI Demo
+
+https://github.com/hex0punk/wally/assets/1915998/1965f765-5437-4486-8c62-c125455b1f01
+
 ## The basics
 
 ### Why is it called Wally?
@@ -128,7 +132,7 @@ Wally can be easily run using Docker. Follow these steps:
 8. After running Wally, you can check the results and the generated PNG or XDOT graph output, as explained in the README.
 
 
-## Wally's fanciest features
+## Wally's features
 
 Wally should work even if you are not able to build the project you want to run it against. However, if you can build the project without any issues, you can run Wally using the `--ssa` flag, at which point Wally will be able to do the following:
 
@@ -178,6 +182,52 @@ Where `-f` defines a filter for the call stack search function. If you don't do 
 
 If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `-l` and an integer to limit the number of recursive calls Wally makes when mapping call paths. This will limit the paths you see in the output, but using a high enough number should return helpful paths still. Experiment with `-l`, `-f`, or both to get the results you need or expect.
 
+### Visualizing paths with wally
+
+To make visualization of callpaths easier, wally can lunch a server on localhost when via a couple methods:
+
+After an analysis by passing the `--server` flag to the `map` command. For instance:
+
+```shell
+$ wally map -p ./... -c .wally.yaml --ssa -f "github.com/hashicorp/nomad" --server
+```
+
+Or, using the `server` subcommand and passing a wally json  file:
+
+```shell
+ $ wally server -p ./nomad-wally.json -P 1984
+```
+
+Next, open a browser and head to the address in the output. 
+
+#### Exploring the graph with wally server
+
+Graphs are generated using the [cosmograph](https://cosmograph.app/) library. Each node represents a function call in code. The colors are not random. Each color has a a different purpose to help you make good use of the graph.
+
+![](assets/finding-node.svg)
+<span style="vertical-align: top;">Finding node. This is a node discovered via wally indicators. Every finding node is the end of a path</span>
+
+![](assets/root-node.svg)
+<span style="vertical-align: top;">This node is the root of a path to a finding node.</span>
+
+![](assets/path-node.svg)
+<span style="vertical-align: top;">Intermediate node between a root and a finding node.</span>
+
+![](assets/dual-node.svg)
+<span style="vertical-align: top;">This node servers both as the root node to a path and an intermediary node for one or more paths</span>
+
+#### Viewing paths
+
+Clicking on any node will highlight all possible paths to that node. Click anywhere other than a node to exist the path selection view.
+
+#### Viewing findings
+
+Clicking on any finding node will populate the section on the left with information about the finding.
+
+#### Searching nodes
+
+Start typing on the search bar on the left to find a node by name. This feature is currently very experimental.
+
 ### PNG and XDOT Graph output
 
 When using the `--ssa` flag, you can also use `-g` or `--graph` to indicate a path for a PNG or XDOT containing a Graphviz-based graph of the call stacks. For example, running:
@@ -215,6 +265,22 @@ This is often caused by issues in the target code base. Make sure you are able t
 ### Wally appears to be stuck in loop
 
 See the section on [Filtering call path analysis](###Filtering-call-path-analysis)
+
+## Viewing help
+
+Viewing the description of each command
+
+### `map`
+
+```Shell
+$ wally map --help
+```
+
+### `server`
+
+```Shell
+$ wally map --help
+```
 
 ## Contributing
 
