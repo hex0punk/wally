@@ -8,7 +8,9 @@ Wally is a static analysis tool for attack surface mapping. It automates the ini
 
 ## UI Demo
 
-https://github.com/hex0punk/wally/assets/1915998/2fa0b6e5-4932-4400-bf04-b0e31cb93816
+<video autoplay loop muted playsinline>
+  <source src="assets/demo.mov" type="video/mp4">
+</video>
 
 ## The basics
 
