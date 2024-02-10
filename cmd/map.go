@@ -3,6 +3,9 @@ package cmd
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v2"
+	"log"
+	"os"
 	"wally/indicator"
 	"wally/navigator"
 	"wally/reporter"
@@ -11,6 +14,9 @@ import (
 )
 
 var (
+	config      string
+	wallyConfig WallyConfig
+
 	paths       []string
 	runSSA      bool
 	filter      string
@@ -39,6 +45,7 @@ var mapCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(mapCmd)
+	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 	mapCmd.PersistentFlags().StringSliceVarP(&paths, "paths", "p", paths, "The comma separated package paths to target. Use ./.. for current directory and subdirectories")
 	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
@@ -49,10 +56,11 @@ func init() {
 	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")
 
 	mapCmd.PersistentFlags().BoolVar(&serverGraph, "server", false, "Starts a server on port 1984 with output graph")
-
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
+	initConfig()
+
 	indicators := indicator.InitIndicators(wallyConfig.Indicators)
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = runSSA
@@ -77,6 +85,24 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	}
 
 	if serverGraph {
-		server.ServerCosmograph(reporter.GetJson(nav.RouteMatches))
+		server.ServerCosmograph(reporter.GetJson(nav.RouteMatches), 1984)
+	}
+}
+
+func initConfig() {
+	wallyConfig = WallyConfig{}
+	fmt.Println("Looking for config file in ", config)
+	if _, err := os.Stat(config); os.IsNotExist(err) {
+		fmt.Println("Configuration file `%s` not found. Will run stock indicators only", config)
+	} else {
+		data, err := os.ReadFile(config)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = yaml.Unmarshal([]byte(data), &wallyConfig)
+		if err != nil {
+			fmt.Println("Could not load configuration file: %s. Will run stock indicators only", err)
+		}
 	}
 }

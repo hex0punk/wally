@@ -579,251 +579,221 @@ function hmrAccept(bundle /*: ParcelRequire */ , id /*: string */ ) {
 }
 
 },{}],"h7u1C":[function(require,module,exports) {
-var _cosmograph = require("@cosmograph/cosmograph");
-const details = document.getElementById("details");
-let nodes = [];
-let links = [];
-let clickedNodes = [];
-let clickedNodeId;
-// Load data from json
-let data;
-function getQueryParam(param) {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get(param);
-}
-// Function to extract a specific URL parameter
-function getQueryParam(param) {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get(param);
-}
-// Function to fetch and parse the JSON file
-async function loadJsonFromUrlParameter() {
+var _graph = require("./cosmograph/graph");
+// Function to fetch and parse wally data
+async function loadWallyData() {
     const fileName = "wally.json";
-    // if (!fileName) {
-    //     console.error('myfile parameter is missing from the URL');
-    //     return; // Exit if the myfile parameter is not provided
-    // }
     try {
-        // Construct the URL where the JSON file is hosted
-        // This assumes the JSON file is hosted on the same server in a specific directory
-        // Modify this line if your JSON files are hosted elsewhere
         const fileUrl = `/${fileName}`;
-        // Fetch the JSON file
+        // Fetch wally file hosted by Go
         const response = await fetch(fileUrl);
         if (!response.ok) throw new Error(`Failed to fetch ${fileUrl}: ${response.statusText}`);
-        // Parse the JSON file
         const jsonData = await response.json();
-        data = jsonData;
-        parseJson();
-        setupGraph();
-        // Continue with what you need to do with jsonData
-        console.log(jsonData); // Example: Log the data to the console
+        const wallyGraph = new (0, _graph.WallyGraph)(jsonData);
+        wallyGraph.setupGraph();
     } catch (error) {
-        console.error("Error loading JSON file:", error);
+        console.error("Error loading Wally data:", error);
     }
 }
-function parseJson() {
-    data.forEach((finding)=>{
-        finding.Paths.forEach((paths)=>{
-            let prev = "";
-            paths.forEach((path, i)=>{
-                if (i === 0) {
-                    prev = path;
-                    addNodeIfNotExist(path, "purple", "");
-                } else {
-                    if (i == paths.length - 1) addNodeIfNotExist(path, "#984040", finding.MatchId);
-                    else addNodeIfNotExist(path, "#4287f5", "");
-                    addEdgeIfNotExist(prev, path);
-                    prev = path;
+loadWallyData();
+
+},{"./cosmograph/graph":"9ZvCx"}],"9ZvCx":[function(require,module,exports) {
+var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
+parcelHelpers.defineInteropFlag(exports);
+parcelHelpers.export(exports, "WallyGraph", ()=>WallyGraph);
+parcelHelpers.export(exports, "detailsOn", ()=>detailsOn);
+parcelHelpers.export(exports, "detailsOff", ()=>detailsOff);
+parcelHelpers.export(exports, "setLeftSide", ()=>setLeftSide);
+var _cosmograph = require("@cosmograph/cosmograph");
+var _config = require("./config");
+class WallyGraph {
+    constructor(data){
+        this.nodes = [];
+        this.links = [];
+        this.clickedNodes = [];
+        this.clickedNodeId = "";
+        this.data = data;
+        this.setConfig();
+        this.setNodes();
+        const cosmographContainer = document.getElementById("cosmograph");
+        const searchContainer = document.getElementById("cosmosearch");
+        this.cosmograph = new (0, _cosmograph.Cosmograph)(cosmographContainer);
+        this.cosmoSearch = new (0, _cosmograph.CosmographSearch)(this.cosmograph, searchContainer);
+    }
+    setConfig() {
+        this.config = (0, _config.BaseConfig);
+        this.config.nodeColor = (n)=>this.getClickedNodesColor(n);
+        this.config.linkColor = (l)=>this.getLinkColor(l);
+        this.config.nodeLabelAccessor = (n)=>this.getLabel(n);
+        this.config.onClick = (node, i)=>this.onNodeClick(node, i);
+        this.searchConfig = {
+            maxVisibleItems: 5,
+            events: {
+                onSelect: (node)=>{
+                    console.log("Selected Node: ", node.id);
                 }
-            });
-        });
-    });
-}
-loadJsonFromUrlParameter();
-function getFinding(findingId) {
-    // console.log("looking for", findingId)
-    let res;
-    data.forEach((finding)=>{
-        if (findingId == finding.MatchId) res = finding;
-    });
-    return res;
-}
-function nodeExists(nodeId) {
-    return nodes.some((node)=>node.id === nodeId);
-}
-function edgeExists(source, target) {
-    return links.some((link)=>link.source === source && link.target === target);
-}
-function addNodeIfNotExist(nodeId, color, findingId) {
-    if (!nodeExists(nodeId)) {
-        let label = extractFuncFromId(nodeId);
-        label = label != null ? label : "";
-        nodes.push({
-            id: nodeId,
-            label: label,
-            color: color,
-            green: "green",
-            finding: findingId
-        });
-    } else {
-        let node = nodes.find((node)=>node.id === nodeId);
-        if (node != null) {
-            if (color == "#4287f5" && node.color == "purple") node.color = "#FFCE85";
-            if (node.color == "#4287f5" && color == "purple") node.color = "#FFCE85";
+            }
+        };
+    }
+    setNodes() {
+        try {
+            this.parseData();
+        } catch (error) {
+            console.error("Error loading Wally data:", error);
         }
     }
-}
-function addEdgeIfNotExist(source, target) {
-    if (!edgeExists(source, target)) links.push({
-        source,
-        target,
-        color: "#8C8C8C"
-    });
-}
-function extractFuncFromId(nodeId) {
-    const match = nodeId.match(/\[(.*?)\]/);
-    return match ? match[1] : null;
-}
-function findLinksByNodeId(nodeId) {
-    return links.filter((link)=>link.source === nodeId || link.target === nodeId);
-}
-function getClickedNodeColor(node) {
-    // Define the default color and the color for a clicked node
-    const defaultColor = node.color;
-    const clickedColor = "green"; // Red
-    if (clickedNodeId == node.id) // Check if the current node is the one that was clicked
-    // if (clickedNodeIdList.includes(node.id)) {
-    return clickedColor;
-    else return defaultColor;
-}
-function getClickedNodesColor(node) {
-    const defaultColor = node.color;
-    const clickedColor = "green"; // Red
-    // if (clickedNodeId == node.id) {
-    // Check if the current node is the one that was clicked
-    if (clickedNodes.includes(node.id)) return node.color;
-    else {
-        if (clickedNodes.length > 0) return [
+    parseData() {
+        this.data.forEach((finding)=>{
+            finding.Paths.forEach((paths)=>{
+                let prev = "";
+                paths.forEach((path, i)=>{
+                    if (i === 0) {
+                        prev = path;
+                        this.addNodeIfNotExist(path, "purple", "");
+                    } else {
+                        if (i == paths.length - 1) this.addNodeIfNotExist(path, "#984040", finding.MatchId);
+                        else this.addNodeIfNotExist(path, "#4287f5", "");
+                        this.addEdgeIfNotExist(prev, path);
+                        prev = path;
+                    }
+                });
+            });
+        });
+    }
+    nodeExists(nodeId) {
+        return this.nodes.some((node)=>node.id === nodeId);
+    }
+    edgeExists(source, target) {
+        return this.links.some((link)=>link.source === source && link.target === target);
+    }
+    addNodeIfNotExist(nodeId, color, findingId) {
+        if (!this.nodeExists(nodeId)) {
+            let label = this.extractFuncFromId(nodeId);
+            label = label != null ? label : "";
+            this.nodes.push({
+                id: nodeId,
+                label: label,
+                color: color,
+                green: "green",
+                finding: findingId
+            });
+        } else {
+            let node = this.nodes.find((node)=>node.id === nodeId);
+            if (node != null) {
+                if (color == "#4287f5" && node.color == "purple") node.color = "#FFCE85";
+                if (node.color == "#4287f5" && color == "purple") node.color = "#FFCE85";
+            }
+        }
+    }
+    addEdgeIfNotExist(source, target) {
+        if (!this.edgeExists(source, target)) this.links.push({
+            source,
+            target,
+            color: "#8C8C8C"
+        });
+    }
+    findAllPrecedingNodes(nodeId) {
+        let visited = new Set(); // To keep track of visited nodes
+        let stack = [
+            nodeId
+        ]; // Start with the target node
+        while(stack.length > 0){
+            let current = stack.pop();
+            // Add the current node to the visited set
+            visited.add(current);
+            // Find all links where the current node is a target
+            let incomingLinks = this.links.filter((link)=>link.target === current);
+            incomingLinks.forEach((link)=>{
+                // Add the source node of each link to the stack
+                if (!visited.has(link.source)) stack.push(link.source);
+            });
+        }
+        visited.delete(nodeId); // Remove the initial node from the result
+        return Array.from(visited); // Convert the Set of visited nodes to an Array and return
+    }
+    findLinksByNodeId(nodeId) {
+        return this.links.filter((link)=>link.source === nodeId || link.target === nodeId);
+    }
+    onNodeClick(node, i) {
+        if (node == undefined) {
+            this.clickedNodes = [];
+            this.clickedNodeId = "";
+            detailsOff();
+            this.cosmoSearch.clearInput();
+            this.cosmoSearch.setConfig(this.searchConfig);
+        } else {
+            let conn = this.findAllPrecedingNodes(node.id);
+            this.clickedNodes = conn;
+            this.clickedNodes.push(node.id);
+            this.clickedNodeId = node.id;
+            if (node.finding != "") {
+                let finding = this.getFinding(node.finding);
+                setLeftSide(finding);
+            }
+        }
+        this.config.nodeColor = (n)=>this.getClickedNodesColor(n);
+        this.config.linkColor = (l)=>this.getLinkColor(l);
+        this.cosmograph.setConfig(this.config);
+    }
+    getClickedNodesColor(node) {
+        const defaultColor = node.color;
+        if (this.clickedNodes.includes(node.id)) return node.color;
+        else {
+            if (this.clickedNodes.length > 0) return [
+                0,
+                0,
+                0,
+                0
+            ];
+            else {
+                if (node.color == "purple" || node.color == "#984040") return node.color;
+                return defaultColor;
+            }
+        }
+    }
+    getClickedNodeColor(node) {
+        const defaultColor = node.color;
+        const clickedColor = "green";
+        if (this.clickedNodeId == node.id) return clickedColor;
+        else return defaultColor;
+    }
+    setupGraph() {
+        this.cosmograph.setConfig((0, _config.BaseConfig));
+        this.cosmoSearch.setConfig(this.searchConfig);
+        this.cosmograph.setData(this.nodes, this.links);
+    }
+    extractFuncFromId(nodeId) {
+        const match = nodeId.match(/\[(.*?)\]/);
+        return match ? match[1] : null;
+    }
+    getLinkColor(link) {
+        let nt = this.clickedNodes.find((n)=>link.target === n);
+        if (nt != undefined && nt != null) return "green";
+        if (this.clickedNodes.length > 0) return [
             0,
             0,
             0,
             0
         ];
+        return link.color;
+    }
+    getLabel(node) {
+        if (this.clickedNodes.includes(node.id)) return node.id;
         else {
-            if (node.color == "purple" || node.color == "#984040") return node.color;
-            return defaultColor;
+            if (this.clickedNodes.length > 0) return "";
+            else return node.label;
         }
     }
-}
-function findAllConnectedNodes(nodeId) {
-    let visited = new Set(); // To keep track of visited nodes
-    let stack = [
-        nodeId
-    ]; // Use a stack for depth-first search
-    while(stack.length > 0){
-        let current = stack.pop();
-        // Add the current node to the visited set
-        visited.add(current);
-        // Find all links where the current node is a source or target
-        let connectedLinks = findLinksByNodeId(current);
-        connectedLinks.forEach((link)=>{
-            // Check both the source and target of each link
-            if (!visited.has(link.source)) stack.push(link.source);
-            if (!visited.has(link.target)) stack.push(link.target);
+    getFinding(findingId) {
+        let res;
+        this.data.forEach((finding)=>{
+            if (findingId == finding.MatchId) res = finding;
         });
-    }
-    // Convert the Set of visited nodes to an Array and return
-    return Array.from(visited);
-}
-// function findLinksByNodeId(nodeId: string): Link[] {
-//     return links.filter(link => link.source === nodeId || link.target === nodeId);
-// }
-function findAllPrecedingNodes(nodeId) {
-    let visited = new Set(); // To keep track of visited nodes
-    let stack = [
-        nodeId
-    ]; // Start with the target node
-    while(stack.length > 0){
-        let current = stack.pop();
-        // Add the current node to the visited set
-        visited.add(current);
-        // Find all links where the current node is a target
-        let incomingLinks = links.filter((link)=>link.target === current);
-        incomingLinks.forEach((link)=>{
-            // Add the source node of each link to the stack
-            if (!visited.has(link.source)) stack.push(link.source);
-        });
-    }
-    visited.delete(nodeId); // Remove the initial node from the result
-    return Array.from(visited); // Convert the Set of visited nodes to an Array and return
-}
-// const canvas = document.getElementById("container")
-const cosmographContainer = document.getElementById("cosmograph");
-const cosmograph = new (0, _cosmograph.Cosmograph)(cosmographContainer);
-// Now set the color of the link
-// If the target is selected, then the link should be green
-function getLinkColor(link) {
-    let nt = clickedNodes.find((n)=>link.target === n);
-    if (nt != undefined && nt != null) return "green";
-    if (clickedNodes.length > 0) return [
-        0,
-        0,
-        0,
-        0
-    ];
-    return link.color;
-}
-function getLabel(node) {
-    if (clickedNodes.includes(node.id)) return node.id;
-    else {
-        if (clickedNodes.length > 0) return "";
-        else return node.label;
+        return res;
     }
 }
-let config = {
-    backgroundColor: "#0f172a",
-    nodeSize: 2.0,
-    nodeColor: (n)=>getClickedNodesColor(n),
-    // linkWidth: 0.5,
-    linkColor: (l)=>getLinkColor(l),
-    // linkArrows: true,
-    // linkVisibilityDistance: [100, 150],
-    nodeLabelAccessor: (n)=>getLabel(n),
-    nodeLabelColor: "white",
-    simulationRepulsion: 1.6,
-    simulationLinkDistance: 10,
-    nodeLabelClassName: "css-label--label",
-    // renderLinks: true,
-    onClick: (node, i)=>{
-        // console.log(node)
-        if (node == undefined) {
-            clickedNodes = [];
-            clickedNodeId = "";
-            detailsOff();
-        } else {
-            let conn = findAllPrecedingNodes(node.id);
-            clickedNodes = conn;
-            clickedNodes.push(node.id);
-            clickedNodeId = node.id;
-            console.log(JSON.stringify(clickedNodes));
-            if (node.finding != "") {
-                console.log("here");
-                let finding = getFinding(node.finding);
-                setLeftSide(finding);
-            // let out = document.getElementById("output")
-            // // console.log("got finding ", finding)
-            // if (out != null) {
-            //     console.log("setting out")
-            //     out.textContent = finding
-            // }
-            }
-        }
-        config.nodeColor = (n)=>getClickedNodesColor(n);
-        config.linkColor = (l)=>getLinkColor(l);
-        cosmograph.setConfig(config);
-    }
-};
+// Containers in UI
+const details = document.getElementById("details");
 function detailsOn() {
     if (details != null && details.classList.contains("invisible")) details.classList.remove("invisible");
 }
@@ -831,7 +801,6 @@ function detailsOff() {
     if (details != null && !details.classList.contains("invisible")) details.classList.add("invisible");
 }
 function setLeftSide(finding) {
-    // console.log(finding)
     detailsOn();
     document.getElementById("pkg").textContent = finding.Indicator.Package;
     document.getElementById("func").textContent = finding.Indicator.Function;
@@ -840,24 +809,8 @@ function setLeftSide(finding) {
     document.getElementById("pos").textContent = finding.Pos;
     document.getElementById("pathNum").textContent = finding.Paths.length;
 }
-function setupGraph() {
-    const searchContainer = document.getElementById("cosmosearch");
-    const search = new (0, _cosmograph.CosmographSearch)(cosmograph, searchContainer);
-    cosmograph.setConfig(config);
-    const searchConfig = {
-        maxVisibleItems: 5,
-        events: {
-            onSelect: (node)=>{
-                console.log("Selected Node: ", node.id);
-            }
-        }
-    };
-    search.setConfig(searchConfig);
-    cosmograph.setData(nodes, links);
-// search.setData(nodes)
-} //
 
-},{"@cosmograph/cosmograph":"7lKBt"}],"7lKBt":[function(require,module,exports) {
+},{"@cosmograph/cosmograph":"7lKBt","./config":"861fF","@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}],"7lKBt":[function(require,module,exports) {
 var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
 parcelHelpers.defineInteropFlag(exports);
 parcelHelpers.export(exports, "Cosmograph", ()=>(0, _indexJs.Cosmograph));
@@ -41268,6 +41221,19 @@ const t = {
     highlightCrossfiltered: !0
 };
 
-},{"../cosmograph/types.js":"jVgLn","@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}]},["eJEEB","h7u1C"], "h7u1C", "parcelRequire3352")
+},{"../cosmograph/types.js":"jVgLn","@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}],"861fF":[function(require,module,exports) {
+var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
+parcelHelpers.defineInteropFlag(exports);
+parcelHelpers.export(exports, "BaseConfig", ()=>BaseConfig);
+const BaseConfig = {
+    backgroundColor: "#0f172a",
+    nodeSize: 2.0,
+    nodeLabelColor: "white",
+    simulationRepulsion: 1.6,
+    simulationLinkDistance: 10,
+    nodeLabelClassName: "css-label--label"
+};
+
+},{"@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}]},["eJEEB","h7u1C"], "h7u1C", "parcelRequire3352")
 
 //# sourceMappingURL=index.b71e74eb.js.map

@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-	"gopkg.in/yaml.v2"
-	"log"
 	"os"
 	"wally/indicator"
 
@@ -15,9 +12,7 @@ type WallyConfig struct {
 }
 
 var (
-	verbose     int
-	config      string
-	wallyConfig WallyConfig
+	verbose int
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -37,27 +32,6 @@ func Execute() {
 	}
 }
 
-func initConfig() {
-	wallyConfig = WallyConfig{}
-	fmt.Println("Looking for config file in ", config)
-	if _, err := os.Stat(config); os.IsNotExist(err) {
-		fmt.Println("Configuration file `%s` not found. Will run stock indicators only", config)
-	} else {
-		data, err := os.ReadFile(config)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = yaml.Unmarshal([]byte(data), &wallyConfig)
-		if err != nil {
-			fmt.Println("Could not load configuration file: %s. Will run stock indicators only", err)
-		}
-	}
-}
-
 func init() {
-	cobra.OnInitialize(initConfig)
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().CountVarP(&verbose, "verbose", "v", "verbose output. Up to -vvv levels of verbosity are supported")
-	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 }
