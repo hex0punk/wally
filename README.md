@@ -174,7 +174,8 @@ Possible Paths: 6
 
 ### Filtering call path analysis
 
-**NOTE: This is very important if you want to use the `ssa` call mapper feature described above**. When running Wally in SSA mode against large codebases, you'd want to tell it to limit its call path mapping work to only packages in the `module` of the codebase you are running it against. For instance, going back to the Nomad example, you'd want to run Wally like so:
+> [!IMPORTANT]
+> When running Wally in SSA mode against large codebases you wally might run into infinite loops. This can be due to various reasons such as recursive functions in callpaths and interfaces. In that case, you'd want to tell wally to limit its call path mapping work to only packages in the `module` of the codebase you are running it against. For instance, going back to the Nomad example, you'd want to run Wally as shown below:
 
 ```shell
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/"
