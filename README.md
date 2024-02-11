@@ -10,7 +10,7 @@ Wally is a static analysis tool for attack surface mapping. It automates the ini
 
 https://github.com/hex0punk/wally/assets/1915998/1965f765-5437-4486-8c62-c125455b1f01
 
-_Read about this graph and how to explore it in the [Exploring the graph with wally server](#Exploring-the-graph-with-wally-server) section
+_Read about this graph and how to explore it in the [Exploring the graph with wally server](#Exploring-the-graph-with-wally-server) section_
 
 ## The basics
 
