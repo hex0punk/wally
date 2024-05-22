@@ -25,3 +25,6 @@ wally
 _dist/
 node_modules/
 .parcel-cache/
+
+.prettierignore
+.prettierrc

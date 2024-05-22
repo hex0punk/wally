@@ -230,7 +230,7 @@ Clicking on any finding node will populate the section on the left with informat
 
 #### Searching nodes
 
-Start typing on the search bar on the left to find a node by name. This feature is currently very experimental.
+Start typing on the search bar on the left to find a node by name. 
 
 ### PNG and XDOT Graph output
 

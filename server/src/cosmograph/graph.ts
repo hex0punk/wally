@@ -39,6 +39,7 @@ export class WallyGraph {
 
     this.searchConfig = {
       maxVisibleItems: 5,
+      activeAccessorIndex: 0,
       events: {
         onSelect: (node: { id: any }) => {
           console.log("Selected Node: ", node.id);
@@ -158,7 +159,7 @@ export class WallyGraph {
       detailsOff();
 
       this.cosmoSearch.clearInput();
-      this.cosmoSearch.setConfig(this.searchConfig);
+      this.cosmograph.unselectNodes();
     } else {
       let conn = this.findAllPrecedingNodes(node.id);
       this.clickedNodes = conn;
