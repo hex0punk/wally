@@ -93,6 +93,9 @@ func appendPath(s *callgraph.Node, path []string, options Options, site ssa.Call
 }
 
 func passesFilter(node *callgraph.Node, filter string) bool {
+	if node.Func.Pkg.Pkg.Path() == "runtime" && node.Func.Name() == "gopanic" {
+		return true
+	}
 	if node.Func != nil && node.Func.Pkg != nil {
 		return strings.HasPrefix(node.Func.Pkg.Pkg.Path(), filter)
 	}
