@@ -16,7 +16,8 @@ type CallMapper struct {
 
 type Options struct {
 	Filter     string
-	RecLimit   int
+	MaxFuncs   int
+	MaxPaths   int
 	PrintNodes bool
 }
 
@@ -27,56 +28,64 @@ func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
 	}
 }
 
-func (cm *CallMapper) AllPaths(s *callgraph.Node, options Options) [][]string {
-	visited := make(map[*callgraph.Node]bool)
-	paths := [][]string{}
+func (cm *CallMapper) AllPaths(s *callgraph.Node, options Options) *match.CallPaths {
+	visited := make(map[int]bool)
 	path := []string{}
 
 	basePos := wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())
 	path = append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), basePos))
-	cm.DFS(s, visited, path, &paths, options, nil)
 
-	// TODO: We have to do this given that the cha callgraph algorithm seems to return duplicate paths at times.
-	// I need to test other algorithms available to see if I get better results (without duplicate paths)
-	res := wallylib.DedupPaths(paths)
+	callPaths := match.CallPaths{}
+	callPaths.Paths = []*match.CallPath{}
 
-	return res
+	cm.DFS(s, visited, path, &callPaths, options, nil)
+
+	return &callPaths
 }
 
-func (cm *CallMapper) DFS(s *callgraph.Node, visited map[*callgraph.Node]bool, path []string, paths *[][]string, options Options, site ssa.CallInstruction) {
-	visited[s] = true
-	defer delete(visited, s)
+func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
+	newPath := appendPath(destination, path, options, site)
 
-	// Append to path based on options and site
-	newPath := appendPath(s, path, options, site)
-
-	// Handle leaf node
-	if len(s.In) == 0 {
-		*paths = append(*paths, newPath)
+	mustStop := options.MaxFuncs > 0 && len(newPath) >= options.MaxFuncs
+	if len(destination.In) == 0 || mustStop {
+		paths.InsertPaths(newPath, mustStop)
 		return
 	}
 
-	// Iterate through incoming edges
-	for _, e := range s.In {
-		if cm.shouldSkipNode(e, options, paths) {
-			*paths = append(*paths, newPath)
-			return
+	// Avoids recursion within a single callpath
+	if visited[destination.ID] {
+		paths.InsertPaths(newPath, false)
+		return
+	}
+	visited[destination.ID] = true
+
+	defer delete(visited, destination.ID)
+
+	for _, e := range destination.In {
+		//if options.MaxFuncs > 0 && (len(newPath) > options.MaxFuncs) {
+		//	continue
+		//}
+		if paths.Paths != nil && options.MaxPaths > 0 && len(paths.Paths) >= options.MaxPaths {
+			cm.Match.SSA.PathLimited = true
+			continue
 		}
-		if e.Caller != nil && !visited[e.Caller] {
-			cm.DFS(e.Caller, visited, newPath, paths, options, e.Site)
+		if strings.HasSuffix(e.Caller.Func.Name(), "$bound") {
+			paths.InsertPaths(newPath, false)
+			return
+		} else {
+			if !visited[e.Caller.ID] {
+				if e.Caller != nil && !cm.shouldSkipNode(e, options, newPath) && !visited[e.Caller.ID] {
+					cm.DFS(e.Caller, visited, newPath, paths, options, e.Site)
+				}
+			}
 		}
 	}
 }
 
-func (cm *CallMapper) shouldSkipNode(e *callgraph.Edge, options Options, paths *[][]string) bool {
-	if options.RecLimit > 0 && len(*paths) >= options.RecLimit {
-		cm.Match.SSA.RecLimited = true
-		return true
-	}
+func (cm *CallMapper) shouldSkipNode(e *callgraph.Edge, options Options, paths []string) bool {
 	if options.Filter != "" && e.Caller != nil && !passesFilter(e.Caller, options.Filter) {
 		return true
 	}
-
 	return false
 }
 
@@ -87,9 +96,9 @@ func appendPath(s *callgraph.Node, path []string, options Options, site ssa.Call
 		}
 		fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
 		return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), fp))
+	} else {
+		return path
 	}
-
-	return path
 }
 
 func passesFilter(node *callgraph.Node, filter string) bool {

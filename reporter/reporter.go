@@ -46,17 +46,22 @@ func PrintMach(match match.RouteMatch) {
 	}
 
 	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
-	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths) > 0 {
-		if match.SSA.RecLimited {
-			fmt.Println("Possible Paths (rec limited):", len(match.SSA.CallPaths))
+	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths.Paths) > 0 {
+		if match.SSA.PathLimited {
+			fmt.Println("Possible Paths (path limited):", len(match.SSA.CallPaths.Paths))
 		} else {
-			fmt.Println("Possible Paths:", len(match.SSA.CallPaths))
+			fmt.Println("Possible Paths:", len(match.SSA.CallPaths.Paths))
 		}
 
-		for i, paths := range match.SSA.CallPaths {
-			fmt.Printf("	Path %d:\n", i+1)
-			for x := len(paths) - 1; x >= 0; x-- {
-				fmt.Printf("		%s --->\n", paths[x])
+		for i, paths := range match.SSA.CallPaths.Paths {
+			if paths.NodeLimited {
+				fmt.Printf("	Path %d (node limited):\n", i+1)
+			} else {
+				fmt.Printf("	Path %d:\n", i+1)
+			}
+
+			for x := len(paths.Nodes) - 1; x >= 0; x-- {
+				fmt.Printf("		%s --->\n", paths.Nodes[x].NodeString)
 			}
 		}
 	}
@@ -114,9 +119,9 @@ func WriteCSVFile(matches []match.RouteMatch, filePath string) error {
 
 	for _, match := range matches {
 		if match.SSA != nil && match.SSA.CallPaths != nil {
-			for _, paths := range match.SSA.CallPaths {
-				for i := 0; i < len(paths)-1; i++ {
-					if err := writer.Write([]string{paths[i], paths[i+1]}); err != nil {
+			for _, paths := range match.SSA.CallPaths.Paths {
+				for i := 0; i < len(paths.Nodes)-1; i++ {
+					if err := writer.Write([]string{paths.Nodes[i].NodeString, paths.Nodes[i+1].NodeString}); err != nil {
 						return fmt.Errorf("error writing record to CSV: %v", err)
 					}
 				}
@@ -135,17 +140,17 @@ func GenerateGraph(matches []match.RouteMatch, path string) {
 		log.Fatal(err)
 	}
 	for _, match := range matches {
-		for _, paths := range match.SSA.CallPaths {
+		for _, paths := range match.SSA.CallPaths.Paths {
 			var prev *cgraph.Node
-			for i := 0; i < len(paths); i++ {
+			for i := 0; i < len(paths.Nodes); i++ {
 				if i == 0 {
-					prev, err = graph.CreateNode(paths[i])
+					prev, err = graph.CreateNode(paths.Nodes[i].NodeString)
 					if err != nil {
 						log.Fatal(err)
 					}
 					prev = prev.SetColor("red").SetFillColor("blue").SetShape("diamond")
 				} else {
-					newNode, err := graph.CreateNode(paths[i])
+					newNode, err := graph.CreateNode(paths.Nodes[i].NodeString)
 					if err != nil {
 						log.Fatal(err)
 					}

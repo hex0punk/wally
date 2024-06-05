@@ -2,6 +2,7 @@ package match
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/google/uuid"
 	"go/token"
 	"go/types"
@@ -22,10 +23,54 @@ type RouteMatch struct {
 
 // TODO: I don't love this here, maybe an SSA dedicated pkg would be better
 type SSAContext struct {
-	RecLimited     bool
+	PathLimited    bool
 	EnclosedByFunc *ssa.Function
 	Edges          []*callgraph.Edge
-	CallPaths      [][]string
+	CallPaths      *CallPaths
+}
+
+type CallPaths struct {
+	Paths []*CallPath
+}
+
+type CallPath struct {
+	ID          int
+	Nodes       []*Node
+	NodeLimited bool
+}
+
+type Node struct {
+	NodeString string
+	Pkg        ssa.Package
+	Func       ssa.Function
+}
+
+func PrintTheThing(paths [][]string) {
+	for _, node := range paths {
+		fmt.Println("NODE: ", node)
+		for i, p := range node {
+			fmt.Printf("%d		Path: %s\n", i, p)
+		}
+		fmt.Println("===============================")
+	}
+}
+
+func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool) {
+	callPath := CallPath{NodeLimited: nodeLimited}
+
+	for _, node := range nodes {
+		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node})
+	}
+	cp.Paths = append(cp.Paths, &callPath)
+}
+
+func (cp *CallPaths) Print() {
+	for _, callPath := range cp.Paths {
+		fmt.Println("NODE: ", callPath)
+		for i, p := range callPath.Nodes {
+			fmt.Printf("%d		Path: %s\n", i, p.NodeString)
+		}
+	}
 }
 
 func NewRouteMatch(indicator indicator.Indicator, pos token.Position) RouteMatch {
@@ -56,29 +101,29 @@ func (r *RouteMatch) MarshalJSON() ([]byte, error) {
 	}
 
 	var resPaths [][]string
-	for _, paths := range r.SSA.CallPaths {
+	for _, paths := range r.SSA.CallPaths.Paths {
 		var p []string
-		for x := len(paths) - 1; x >= 0; x-- {
-			p = append(p, paths[x])
+		for x := len(paths.Nodes) - 1; x >= 0; x-- {
+			p = append(p, paths.Nodes[x].NodeString)
 		}
 		resPaths = append(resPaths, p)
 	}
 
 	return json.Marshal(struct {
-		MatchId    string
-		Indicator  indicator.Indicator
-		Params     map[string]string
-		Pos        string
-		EnclosedBy string
-		RecLimited bool
-		Paths      [][]string
+		MatchId     string
+		Indicator   indicator.Indicator
+		Params      map[string]string
+		Pos         string
+		EnclosedBy  string
+		PathLimited bool
+		Paths       [][]string
 	}{
-		MatchId:    r.MatchId,
-		Indicator:  r.Indicator,
-		Params:     params,
-		Pos:        r.Pos.String(),
-		EnclosedBy: enclosedBy,
-		RecLimited: r.SSA.RecLimited,
-		Paths:      resPaths,
+		MatchId:     r.MatchId,
+		Indicator:   r.Indicator,
+		Params:      params,
+		Pos:         r.Pos.String(),
+		EnclosedBy:  enclosedBy,
+		PathLimited: r.SSA.PathLimited,
+		Paths:       resPaths,
 	})
 }
