@@ -41,18 +41,8 @@ type CallPath struct {
 
 type Node struct {
 	NodeString string
-	Pkg        ssa.Package
-	Func       ssa.Function
-}
-
-func PrintTheThing(paths [][]string) {
-	for _, node := range paths {
-		fmt.Println("NODE: ", node)
-		for i, p := range node {
-			fmt.Printf("%d		Path: %s\n", i, p)
-		}
-		fmt.Println("===============================")
-	}
+	Pkg        *ssa.Package
+	Func       *ssa.Function
 }
 
 func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool) {
@@ -63,6 +53,41 @@ func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool) {
 	}
 	cp.Paths = append(cp.Paths, &callPath)
 }
+
+//type CallPaths struct {
+//	Paths []*CallPath
+//}
+//
+//type CallPath struct {
+//	ID          int
+//	Nodes       []*Node
+//	NodeLimited bool
+//}
+//
+//type Node struct {
+//	NodeString string
+//	Pkg        ssa.Package
+//	Func       ssa.Function
+//}
+//
+//func PrintTheThing(paths [][]string) {
+//	for _, node := range paths {
+//		fmt.Println("NODE: ", node)
+//		for i, p := range node {
+//			fmt.Printf("%d		Path: %s\n", i, p)
+//		}
+//		fmt.Println("===============================")
+//	}
+//}
+//
+//func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool) {
+//	callPath := CallPath{NodeLimited: nodeLimited}
+//
+//	for _, node := range nodes {
+//		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node})
+//	}
+//	cp.Paths = append(cp.Paths, &callPath)
+//}
 
 func (cp *CallPaths) Print() {
 	for _, callPath := range cp.Paths {

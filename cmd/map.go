@@ -6,6 +6,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"log"
 	"os"
+	"strings"
 	"wally/indicator"
 	"wally/navigator"
 	"wally/reporter"
@@ -27,6 +28,8 @@ var (
 	format      string
 	outputFile  string
 	serverGraph bool
+	skipDefault bool
+	searchAlg   string
 )
 
 // mapCmd represents the map command
@@ -36,7 +39,12 @@ var mapCmd = &cobra.Command{
 	Long:  `Get list a list of all routes with resolved values as possible for params, along with enclosing functions"`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if format != "" && format != "json" {
-			return fmt.Errorf("invalid output type: %q", format)
+			return fmt.Errorf("invalid output type: %q\n", format)
+		}
+
+		searchAlg = strings.ToLower(searchAlg)
+		if searchAlg != "bfs" || searchAlg != "dfs" {
+			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s\n", searchAlg)
 		}
 
 		return nil
@@ -49,7 +57,9 @@ func init() {
 	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 	mapCmd.PersistentFlags().StringSliceVarP(&paths, "paths", "p", paths, "The comma separated package paths to target. Use ./.. for current directory and subdirectories")
 	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
+	mapCmd.PersistentFlags().StringVar(&searchAlg, "search-alg", "bfs", "Search algorithm used for mapping callgraph (dfs or bfs)")
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
+	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
 	mapCmd.PersistentFlags().IntVarP(&maxFuncs, "max-funcs", "l", 0, "Limit the max number of nodes per path")
 	mapCmd.PersistentFlags().IntVarP(&maxPaths, "max-paths", "m", 0, "Max paths per node. This helps when wally encounters recursive calls")
@@ -63,7 +73,7 @@ func init() {
 func mapRoutes(cmd *cobra.Command, args []string) {
 	initConfig()
 
-	indicators := indicator.InitIndicators(wallyConfig.Indicators)
+	indicators := indicator.InitIndicators(wallyConfig.Indicators, skipDefault)
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = runSSA
 
@@ -75,6 +85,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 			MaxFuncs:   maxFuncs,
 			MaxPaths:   maxPaths,
 			PrintNodes: printNodes,
+			SearchAlg:  callmapper.SearchAlgs[searchAlg],
 		}
 		nav.Logger.Info("Solving call paths")
 		nav.SolveCallPaths(mapperOptions)

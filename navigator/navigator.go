@@ -258,7 +258,10 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 		i, match := i, match
 		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
 		cm := callmapper.NewCallMapper(&match, options)
-		n.RouteMatches[i].SSA.CallPaths = cm.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+		if options.SearchAlg == callmapper.Dfs {
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+		}
+		n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
 	}
 }
 

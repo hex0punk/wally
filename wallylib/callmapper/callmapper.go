@@ -1,6 +1,7 @@
 package callmapper
 
 import (
+	"container/list"
 	"fmt"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
@@ -9,9 +10,21 @@ import (
 	"wally/wallylib"
 )
 
+type SearchAlgorithm int
+
+const (
+	Bfs SearchAlgorithm = iota
+	Dfs
+)
+
 type CallMapper struct {
 	Options Options
 	Match   *match.RouteMatch
+}
+
+var SearchAlgs = map[string]SearchAlgorithm{
+	"bfs": Bfs,
+	"dfs": Dfs,
 }
 
 type Options struct {
@@ -19,6 +32,7 @@ type Options struct {
 	MaxFuncs   int
 	MaxPaths   int
 	PrintNodes bool
+	SearchAlg  SearchAlgorithm
 }
 
 func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
@@ -28,19 +42,36 @@ func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
 	}
 }
 
-func (cm *CallMapper) AllPaths(s *callgraph.Node, options Options) *match.CallPaths {
+func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
+	basePos := wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())
+
+	initialPath := []string{
+		cm.Match.Pos.String(),
+		fmt.Sprintf("[%s] %s", s.Func.Name(), basePos),
+	}
+
+	callPaths := &match.CallPaths{}
+	cm.BFS(s, initialPath, callPaths, options)
+
+	return callPaths
+}
+
+func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.CallPaths {
 	visited := make(map[int]bool)
-	path := []string{}
 
 	basePos := wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())
-	path = append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), basePos))
 
-	callPaths := match.CallPaths{}
+	initialPath := []string{
+		cm.Match.Pos.String(),
+		fmt.Sprintf("[%s] %s", s.Func.Name(), basePos),
+	}
+
+	callPaths := &match.CallPaths{}
 	callPaths.Paths = []*match.CallPath{}
 
-	cm.DFS(s, visited, path, &callPaths, options, nil)
+	cm.DFS(s, visited, initialPath, callPaths, options, nil)
 
-	return &callPaths
+	return callPaths
 }
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
@@ -74,7 +105,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 			return
 		} else {
 			if !visited[e.Caller.ID] {
-				if e.Caller != nil && !cm.shouldSkipNode(e, options, newPath) && !visited[e.Caller.ID] {
+				if e.Caller != nil && !shouldSkipNode(e, options, newPath) && !visited[e.Caller.ID] {
 					cm.DFS(e.Caller, visited, newPath, paths, options, e.Site)
 				}
 			}
@@ -82,9 +113,57 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	}
 }
 
-func (cm *CallMapper) shouldSkipNode(e *callgraph.Edge, options Options, paths []string) bool {
+func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *match.CallPaths, options Options) {
+	type BFSNode struct {
+		Node *callgraph.Node
+		Path []string
+	}
+
+	queue := list.New()
+	queue.PushBack(BFSNode{Node: start, Path: initialPath})
+
+	for queue.Len() > 0 && (options.MaxPaths == 0 || len(paths.Paths) < options.MaxPaths) {
+		bfsNodeElm := queue.Front()
+		queue.Remove(bfsNodeElm)
+
+		current := bfsNodeElm.Value.(BFSNode)
+		currentNode := current.Node
+		currentPath := current.Path
+
+		newPath := appendPath(currentNode, currentPath, options, nil)
+		mustStop := options.MaxFuncs > 0 && len(newPath) >= options.MaxFuncs
+
+		if len(currentNode.In) == 0 || mustStop {
+			paths.InsertPaths(newPath, mustStop)
+			if options.MaxPaths > 0 && len(paths.Paths) >= options.MaxPaths {
+				break
+			}
+			continue
+		}
+
+		for _, e := range currentNode.In {
+			if !shouldSkipNode(e, options, newPath) && !callerInPath(e, newPath) {
+				newPathCopy := make([]string, len(newPath))
+				copy(newPathCopy, newPath)
+				newPathWithCaller := appendPath(e.Caller, newPathCopy, options, e.Site)
+				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
+			}
+		}
+	}
+}
+
+func shouldSkipNode(e *callgraph.Edge, options Options, paths []string) bool {
 	if options.Filter != "" && e.Caller != nil && !passesFilter(e.Caller, options.Filter) {
 		return true
+	}
+	return false
+}
+
+func callerInPath(e *callgraph.Edge, paths []string) bool {
+	for _, p := range paths {
+		if strings.Contains(p, fmt.Sprintf("[%s]", e.Caller.Func.Name())) {
+			return true
+		}
 	}
 	return false
 }
@@ -95,9 +174,13 @@ func appendPath(s *callgraph.Node, path []string, options Options, site ssa.Call
 			return append(path, s.String())
 		}
 		fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
+		if s.Func.Recover != nil {
+			return append(path, fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp))
+		}
 		return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), fp))
 	} else {
 		return path
+		//return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
 	}
 }
 

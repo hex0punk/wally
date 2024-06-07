@@ -30,8 +30,12 @@ type RouteParam struct {
 	Pos  int    `yaml:"pos"`
 }
 
-func InitIndicators(customIndicators []Indicator) []Indicator {
-	indicators := getStockIndicators()
+func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator {
+	indicators := []Indicator{}
+	if !skipDefault {
+		indicators = getStockIndicators()
+	}
+
 	if customIndicators != nil && len(customIndicators) > 0 {
 		fmt.Println("Loading custom indicator")
 		idStart := len(indicators)
