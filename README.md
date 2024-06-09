@@ -124,7 +124,7 @@ Wally can be easily run using Docker. Follow these steps:
 6. If you have a specific configuration file (e.g., .wally.yaml), you can mount it into the container:
 
     ```bash
-    docker run -w </PROJECT> -v $(pwd):</PROJECT> -v </PATH/TO/.wally.yaml>:</PROJECT>/.wally.yaml go-wally map -c .wally.yaml -p ./... -m 50 -vvv
+    docker run -w </PROJECT> -v $(pwd):</PROJECT> -v </PATH/TO/.wally.yaml>:</PROJECT>/.wally.yaml go-wally map -c .wally.yaml -p ./... --max-paths 50 -vvv
     ```
 
    This will run Wally within a Docker container, analyzing your Go code for HTTP and RPC routes based on the specified indicators and configurations.
@@ -178,13 +178,13 @@ Possible Paths: 6
 > When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. In most cases, you'd want to filter analysis to only the module you want to target. For instance, when using wally to find HTTP and gRPC routes in nomad, you'd want to type the command below. 
 
 ```shell
-$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -m 50
+$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" --max-paths 50
 ```
 
 Where `-f` defines a filter for the call stack search function. If you don't do this, wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests.
 
 > [!IMPORTANT]
-> If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `-m` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `-m`, `-l`, `-f`, or all three to get the results you need or expect.
+> If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `--max-paths` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `--max-paths`, `--max-funcs`, `-f`, or all three to get the results you need or expect.
 
 ### Visualizing paths with wally
 

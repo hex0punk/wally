@@ -43,7 +43,7 @@ var mapCmd = &cobra.Command{
 		}
 
 		searchAlg = strings.ToLower(searchAlg)
-		if searchAlg != "bfs" || searchAlg != "dfs" {
+		if searchAlg != "bfs" && searchAlg != "dfs" {
 			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s\n", searchAlg)
 		}
 
@@ -54,15 +54,17 @@ var mapCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(mapCmd)
+
+	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
 	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
+
 	mapCmd.PersistentFlags().StringSliceVarP(&paths, "paths", "p", paths, "The comma separated package paths to target. Use ./.. for current directory and subdirectories")
 	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
 	mapCmd.PersistentFlags().StringVar(&searchAlg, "search-alg", "bfs", "Search algorithm used for mapping callgraph (dfs or bfs)")
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
-	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
 	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
-	mapCmd.PersistentFlags().IntVarP(&maxFuncs, "max-funcs", "l", 0, "Limit the max number of nodes per path")
-	mapCmd.PersistentFlags().IntVarP(&maxPaths, "max-paths", "m", 0, "Max paths per node. This helps when wally encounters recursive calls")
+	mapCmd.PersistentFlags().IntVar(&maxFuncs, "max-funcs", 0, "Limit the max number of nodes or functions per call path")
+	mapCmd.PersistentFlags().IntVar(&maxPaths, "max-paths", 0, "Max paths per node. This helps when wally encounters recursive calls")
 	mapCmd.PersistentFlags().BoolVar(&printNodes, "print-nodes", false, "Print the position of call graph paths rather than node")
 	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json, csv")
 	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")

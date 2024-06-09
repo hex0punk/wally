@@ -52,7 +52,7 @@ func GetParamPos(sig *types.Signature, paramName string) (int, error) {
 			return i, nil
 		}
 	}
-	// TODO: not great
+	// TODO: not great to return 0
 	return 0, errors.New("Unable to find param pos")
 }
 

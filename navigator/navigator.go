@@ -157,6 +157,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.CallExpr)(nil),
 		(*ast.GenDecl)(nil),
 		(*ast.AssignStmt)(nil),
+		(*ast.DeclStmt)(nil),
 	}
 
 	results := []match.RouteMatch{}
@@ -166,6 +167,12 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
 		if gen, ok := node.(*ast.GenDecl); ok {
 			n.RecordGlobals(gen, pass)
+		}
+
+		if gen3, ok := node.(*ast.DeclStmt); ok {
+			if gen2, ok := gen3.Decl.(*ast.GenDecl); ok {
+				n.RecordGlobals(gen2, pass)
+			}
 		}
 
 		if stmt, ok := node.(*ast.AssignStmt); ok {
@@ -196,11 +203,8 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Whether we are able to get params or not we have a match
 		match := match.NewRouteMatch(*route, pos)
 
-		sel, _ := funExpr.(*ast.SelectorExpr)
-
-		sig, _ := wallylib.GetFuncSignature(sel.Sel, pass.TypesInfo)
 		// Now try to get the params for methods, path, etc.
-		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
+		match.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
 
 		//Get the enclosing func
 		if n.RunSSA {
@@ -260,22 +264,23 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 		cm := callmapper.NewCallMapper(&match, options)
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+		} else {
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
 		}
-		n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
 	}
 }
 
 // TODO: TEMP - test this but with a parm for other types such as assighmentStmt, etc
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 	for _, spec := range gen.Specs {
-
 		s, ok := spec.(*ast.ValueSpec)
 		if !ok {
 			continue
 		}
+
 		for k, id := range s.Values {
 			res := wallylib.GetValueFromExp(id, pass)
-			if res != "" {
+			if res == "" {
 				continue
 			}
 

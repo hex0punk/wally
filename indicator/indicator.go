@@ -23,6 +23,7 @@ type Indicator struct {
 	Function      string        `yaml:"function"`
 	Params        []RouteParam  `yaml:"params"`
 	IndicatorType IndicatorType `yaml:"indicatorType"`
+	ReceiverType  string        `yaml:"receiverType"`
 }
 
 type RouteParam struct {
@@ -46,6 +47,9 @@ func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator 
 			}
 			fmt.Println("Pkg: ", indCpy.Package)
 			fmt.Println("Func: ", indCpy.Function)
+			if indCpy.ReceiverType != "" {
+				fmt.Println("Receiver Type: ", indCpy.ReceiverType)
+			}
 			fmt.Println()
 			indicators = append(indicators, indCpy)
 		}

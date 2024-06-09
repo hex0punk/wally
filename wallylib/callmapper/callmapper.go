@@ -75,7 +75,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 }
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
-	newPath := appendPath(destination, path, options, site)
+	newPath := appendNodeToPath(destination, path, options, site)
 
 	mustStop := options.MaxFuncs > 0 && len(newPath) >= options.MaxFuncs
 	if len(destination.In) == 0 || mustStop {
@@ -130,7 +130,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		currentNode := current.Node
 		currentPath := current.Path
 
-		newPath := appendPath(currentNode, currentPath, options, nil)
+		newPath := appendNodeToPath(currentNode, currentPath, options, nil)
 		mustStop := options.MaxFuncs > 0 && len(newPath) >= options.MaxFuncs
 
 		if len(currentNode.In) == 0 || mustStop {
@@ -145,7 +145,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if !shouldSkipNode(e, options, newPath) && !callerInPath(e, newPath) {
 				newPathCopy := make([]string, len(newPath))
 				copy(newPathCopy, newPath)
-				newPathWithCaller := appendPath(e.Caller, newPathCopy, options, e.Site)
+				newPathWithCaller := appendNodeToPath(e.Caller, newPathCopy, options, e.Site)
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
 			}
 		}
@@ -168,7 +168,7 @@ func callerInPath(e *callgraph.Edge, paths []string) bool {
 	return false
 }
 
-func appendPath(s *callgraph.Node, path []string, options Options, site ssa.CallInstruction) []string {
+func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ssa.CallInstruction) []string {
 	if site != nil {
 		if options.PrintNodes || s.Func.Package() == nil {
 			return append(path, s.String())

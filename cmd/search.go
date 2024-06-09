@@ -12,30 +12,33 @@ import (
 var (
 	pkg      string
 	function string
+	recvType string
 )
 
 // funcCmd represents the map command
 var funcCmd = &cobra.Command{
-	Use:   "func",
+	Use:   "search",
 	Short: "Map a single function",
 	Long:  `Performs analysis given a single function"`,
-	Run:   mapFunc,
+	Run:   searchFunc,
 }
 
 func init() {
 	mapCmd.AddCommand(funcCmd)
 	funcCmd.PersistentFlags().StringVar(&pkg, "pkg", "", "Package name")
 	funcCmd.PersistentFlags().StringVar(&function, "func", "", "Function name")
+	funcCmd.PersistentFlags().StringVar(&recvType, "recv-type", "", "receiver type name (excluding package)")
 	funcCmd.MarkPersistentFlagRequired("pkg")
 	funcCmd.MarkPersistentFlagRequired("func")
 }
 
-func mapFunc(cmd *cobra.Command, args []string) {
+func searchFunc(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators(
 		[]indicator.Indicator{
 			indicator.Indicator{
-				Package:  pkg,
-				Function: function,
+				Package:      pkg,
+				Function:     function,
+				ReceiverType: recvType,
 			},
 		}, true,
 	)

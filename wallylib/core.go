@@ -2,6 +2,7 @@ package wallylib
 
 import (
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/build"
 	"go/types"
@@ -29,6 +30,7 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 	var match *indicator.Indicator
 	for _, ind := range indicators {
 		ind := ind
+
 		// User may decide they do not care if the package matches.
 		// It'd be worth adding a command to "take a guess" for potential routes
 		if fi.Package != ind.Package && ind.Package != "*" {
@@ -37,12 +39,30 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 		if fi.Name != ind.Function {
 			continue
 		}
-		//if fi.Type != "" && fi.Type != ind.Type {
-		//	continue
-		//}
+
+		if ind.ReceiverType != "" {
+			if !fi.matchReceiver(ind.Package, ind.ReceiverType) {
+				continue
+			}
+		}
+
 		match = &ind
 	}
 	return match
+}
+
+func (fi *FuncInfo) matchReceiver(pkg, recvType string) bool {
+	if fi.Signature == nil || fi.Signature.Recv() == nil {
+		return false
+	}
+
+	recString := fmt.Sprintf("%s.%s", pkg, recvType)
+	funcRecv := fi.Signature.Recv().Type().String()
+
+	if recString == funcRecv || fmt.Sprintf("*%s", recString) == funcRecv {
+		return true
+	}
+	return false
 }
 
 func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
@@ -62,30 +82,44 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 		}
 	}
 
+	// TODO: maybe worth returning an error if we cannot get the signature, as we don't support
+	// anonymous functions and closures as targetted functions via indicators anyway
+	sig, _ := GetFuncSignature(sel.Sel, info)
+
 	return &FuncInfo{
 		Package: pkgPath.Path(),
 		Pkg:     pkgPath,
 		//Type: nil,
-		Name: funcName,
+		Name:      funcName,
+		Signature: sig,
 	}, nil
 }
 
 func GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Signature, error) {
-	idt, ok := expr.(*ast.Ident)
-	if !ok {
-		return nil, errors.New("not an ident for expr")
+	switch expr := expr.(type) {
+	case *ast.Ident:
+		obj := info.ObjectOf(expr)
+		return getSignatureFromObject(obj)
+	case *ast.CallExpr:
+		if ident, ok := expr.Fun.(*ast.Ident); ok {
+			obj := info.ObjectOf(ident)
+			return getSignatureFromObject(obj)
+		}
 	}
 
-	o1 := info.ObjectOf(idt)
-	switch va := o1.(type) {
+	return nil, errors.New("unable to get signature from expression")
+}
+
+func getSignatureFromObject(obj types.Object) (*types.Signature, error) {
+	switch obj := obj.(type) {
 	case *types.Func:
-		return va.Type().(*types.Signature), nil
+		return obj.Type().(*types.Signature), nil
 	case *types.Var:
-		// It's a function from a struct field
-		return va.Type().(*types.Signature), nil
-	default:
-		return nil, errors.New("Unable to get signature")
+		if sig, ok := obj.Type().(*types.Signature); ok {
+			return sig, nil
+		}
 	}
+	return nil, errors.New("object is not a function or does not have a signature")
 }
 
 func GetName(e ast.Expr) string {
