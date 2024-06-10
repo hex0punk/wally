@@ -125,9 +125,9 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 	//currId := 0
 	for queue.Len() > 0 && (options.MaxPaths == 0 || len(paths.Paths) < options.MaxPaths) {
-		if queue.Len()+len(paths.Paths) >= options.MaxPaths {
-			break
-		}
+		//if queue.Len()+len(paths.Paths) >= options.MaxPaths {
+		//	break
+		//}
 		//fmt.Println("one")
 		//printQueue(queue)
 		// we process the first node - on first iteration, it'd be [Normalize] cogs/cogs.go:156:19 --->
@@ -152,6 +152,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		//printQueue(queue)
 		// Turns out there ARE nodes that call the currentNode
 		//beforeLen := len(newPath)
+		allOutsideModule := true
 		for _, e := range currentNode.In {
 			if callerInPath(e, newPath) {
 				continue
@@ -164,10 +165,8 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 				// We want to process the new node we added to the path.
 				newPathWithCaller := appendNodeToPath(e.Caller, newPathCopy, options, e.Site)
-				//if !(queue.Len()+len(paths.Paths) + 1 >= options.MaxPaths) {
-				//
-				//}
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
+				allOutsideModule = false
 			} else {
 				// TODO: the problem here is that we need a way to find out
 				// whether any paths were added at all if the node was skipped AND nodes were pushed that require
@@ -182,6 +181,9 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if queue.Len()+len(paths.Paths) >= options.MaxPaths {
 				break
 			}
+		}
+		if allOutsideModule {
+			paths.InsertPaths(currentPath, false)
 		}
 	}
 	for e := queue.Front(); e != nil; e = e.Next() {
