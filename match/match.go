@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
+	"strings"
 	"wally/indicator"
 )
 
@@ -37,6 +38,7 @@ type CallPath struct {
 	ID          int
 	Nodes       []*Node
 	NodeLimited bool
+	Recoverable bool
 }
 
 type Node struct {
@@ -50,6 +52,10 @@ func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool) {
 
 	for _, node := range nodes {
 		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node})
+		// Temp hack while we replace nodes with a structure containing parts of a path (func, pkg, etc.)
+		if strings.Contains(node, "(recoverable)") {
+			callPath.Recoverable = true
+		}
 	}
 	cp.Paths = append(cp.Paths, &callPath)
 }
