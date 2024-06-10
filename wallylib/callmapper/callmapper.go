@@ -228,6 +228,20 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 			return append(path, s.String())
 		}
 		fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
+		if fp == "services/webber/main/webber/webber.go:372:20" {
+			from := ""
+			to := ""
+			for idx, ins := range s.Func.Recover.Instrs {
+				recFp := wallylib.GetFormattedPos(s.Func.Package(), ins.Pos())
+				if idx == 0 {
+					from = recFp
+				}
+				if idx == len(s.Func.Recover.Instrs)-1 {
+					to = recFp
+				}
+			}
+			fmt.Println(from, to)
+		}
 		if s.Func.Recover != nil {
 			return append(path, fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp))
 		}
