@@ -28,6 +28,12 @@ var SearchAlgs = map[string]SearchAlgorithm{
 	"dfs": Dfs,
 }
 
+// TODO: this should be path of the callpath structs in match pkg
+type BFSNode struct {
+	Node *callgraph.Node
+	Path []string
+}
+
 type Options struct {
 	Filter     string
 	MaxFuncs   int
@@ -114,23 +120,12 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	}
 }
 
-// TODO: this should be path of the callpath structs in match pkg
-type BFSNode struct {
-	ID   int
-	Node *callgraph.Node
-	Path []string
-}
-
 func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *match.CallPaths, options Options) {
 	queue := list.New()
 	queue.PushBack(BFSNode{Node: start, Path: initialPath})
 
 	pathLimited := false
 	for queue.Len() > 0 {
-		//if options.MaxPaths > 0 && len(paths.Paths)+queue.Len() >= options.MaxPaths {
-		//	pathLimited = true
-		//	break
-		//}
 		// we process the first node - on first iteration, it'd be [Normalize] cogs/cogs.go:156:19 --->
 		bfsNodeElm := queue.Front()
 		// We remove last elm so we can put it in the front after updating it with new paths
@@ -151,11 +146,8 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 		allOutsideModule := true
 		for _, e := range currentNode.In {
-			if callerInPath(e, newPath) {
-				continue
-			}
 			// Do we care about this node, or is it in the path already (if it calls itself)?
-			if e.Caller == nil {
+			if callerInPath(e, newPath) {
 				continue
 			}
 			if passesFilter(e.Caller, options.Filter) {
@@ -249,7 +241,7 @@ func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool,
 	visited[fn] = true
 
 	// TODO: Test using the Recover index from the incoming function anyway
-	if len(fn.Blocks) < idx {
+	if idx >= len(fn.Blocks) {
 		return false, errors.New("Unexpected error finding recover block")
 	}
 
@@ -281,9 +273,16 @@ func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool,
 				//}
 			}
 		case *ssa.MakeClosure:
-			if fn, ok := instr.Fn.(*ssa.Function); ok {
-				return findDeferRecoverRecursive(fn, visited, idx)
+			if closureFn, ok := instr.Fn.(*ssa.Function); ok {
+				if res, _ := findDeferRecoverRecursive(closureFn, visited, fn.Recover.Index-1); res {
+					return true, nil
+				}
 			}
+			//if clousureFn, ok := instr.Fn.(*ssa.Function); ok {
+			//	if clousureFn.Recover != nil {
+			//		return findDeferRecoverRecursive(clousureFn, visited, clousureFn.Recover.Index-1)
+			//	}
+			//}
 		}
 	}
 	return false, nil
