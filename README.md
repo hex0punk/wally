@@ -32,6 +32,7 @@ Wally currently supports the following features:
 
 - Discover HTTP client calls and route listeners in your code by looking at each function name, signature, and package to make sure it finds the functions that you actually care about.
 - Wally solves the value of compile-time constant values that may be used in the functions of interest. Wally does a pretty good job at finding constants and global variables and resolving their values for you so you don't have to chase those manually in code.
+- Determine possible paths to a target function and examine the fault tolerance of such path. This is particularly useful when determining fuzzing targets or evaluating of panics discovered during fuzzing efforts.
 - Wally will report the enclosing function where the function of interest is called.
 - Wally will also give you all possible call paths to your functions of interest. This can be useful when analyzing monorepos where service A calls service B via a client function declared in service B's packages. This feature requires that the target code base is buildable.
 - Wally will output a nice PNG graph of the call stacks for the different routes it finds.

@@ -49,35 +49,37 @@ func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
 	}
 }
 
-func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
+func (cm *CallMapper) initPath(s *callgraph.Node) ([]string, string) {
 	basePos := wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())
-
-	initialPath := []string{
-		//cm.Match.Pos.String(),
-		fmt.Sprintf("[%s] %s", s.Func.Name(), basePos),
+	baseStr := fmt.Sprintf("[%s] %s", s.Func.Name(), basePos)
+	if s.Func.Recover != nil {
+		rec, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
+		if err != nil {
+			baseStr = fmt.Sprintf("[%s] (%s) %s", s.Func.Name(), err.Error(), basePos)
+		}
+		if rec {
+			baseStr = fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), basePos)
+		}
 	}
+	initialPath := []string{
+		baseStr,
+	}
+	return initialPath, baseStr
+}
 
+func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
+	initialPath, _ := cm.initPath(s)
 	callPaths := &match.CallPaths{}
 	cm.BFS(s, initialPath, callPaths, options)
-
 	return callPaths
 }
 
 func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.CallPaths {
 	visited := make(map[int]bool)
-
-	basePos := wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())
-
-	initialPath := []string{
-		//cm.Match.Pos.String(),
-		fmt.Sprintf("[%s] %s", s.Func.Name(), basePos),
-	}
-
+	initialPath, _ := cm.initPath(s)
 	callPaths := &match.CallPaths{}
 	callPaths.Paths = []*match.CallPath{}
-
 	cm.DFS(s, visited, initialPath, callPaths, options, nil)
-
 	return callPaths
 }
 
@@ -198,27 +200,27 @@ func callerInPath(e *callgraph.Edge, paths []string) bool {
 }
 
 func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ssa.CallInstruction) []string {
-	if site != nil {
-		if options.PrintNodes || s.Func.Package() == nil {
-			return append(path, s.String())
-		}
-
-		fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
-
-		if s.Func.Recover != nil {
-			hasRecover, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
-			if err != nil {
-				return append(path, fmt.Sprintf("[%s] (error detecting recoverable) %s", s.Func.Name(), fp))
-			}
-			if hasRecover {
-				return append(path, fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp))
-			}
-		}
-		return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), fp))
-	} else {
+	if site == nil {
 		return path
 		//return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
 	}
+
+	if options.PrintNodes || s.Func.Package() == nil {
+		return append(path, s.String())
+	}
+
+	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
+	nodeDescription := fmt.Sprintf("[%s] %s", s.Func.Name(), fp)
+
+	if s.Func.Recover != nil {
+		hasRecover, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
+		if err != nil {
+			nodeDescription = fmt.Sprintf("[%s] (%s) %s", s.Func.Name(), err.Error(), fp)
+		} else if hasRecover {
+			nodeDescription = fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp)
+		}
+	}
+	return append(path, nodeDescription)
 }
 
 func passesFilter(node *callgraph.Node, filter string) bool {
@@ -233,56 +235,48 @@ func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
 	return findDeferRecoverRecursive(fn, visited, idx)
 }
 
-func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool, idx int) (bool, error) {
+func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool, starterBlock int) (bool, error) {
 	if visited[fn] {
 		return false, nil
 	}
 
 	visited[fn] = true
 
-	// TODO: Test using the Recover index from the incoming function anyway
-	if idx >= len(fn.Blocks) {
-		return false, errors.New("Unexpected error finding recover block")
-	}
-
-	recoverBlock := fn.Blocks[idx]
-
-	for _, instr := range recoverBlock.Instrs {
-		switch instr := instr.(type) {
-		case *ssa.Defer:
-			if call, ok := instr.Call.Value.(*ssa.Function); ok {
-				if containsRecoverCall(call) {
-					return true, nil
+	// we use starterBlock on first call as we know where the defer call is, then reset it to 0 for subsequent blocks
+	// to find the recover() if there
+	for blockIdx := starterBlock; blockIdx < len(fn.Blocks); blockIdx++ {
+		block := fn.Blocks[blockIdx]
+		for _, instr := range block.Instrs {
+			switch it := instr.(type) {
+			case *ssa.Defer:
+				if call, ok := it.Call.Value.(*ssa.Function); ok {
+					if containsRecoverCall(call) {
+						return true, nil
+					}
+				}
+			case *ssa.Go:
+				if call, ok := it.Call.Value.(*ssa.Function); ok {
+					if containsRecoverCall(call) {
+						return true, nil
+					}
+				}
+			case *ssa.Call:
+				if callee := it.Call.Value; callee != nil {
+					if callee.Name() == "recover" {
+						return true, nil
+					}
+				}
+			case *ssa.MakeClosure:
+				if closureFn, ok := it.Fn.(*ssa.Function); ok {
+					res, err := findDeferRecoverRecursive(closureFn, visited, 0)
+					if err != nil {
+						return false, errors.New("Unexpected error finding recover block")
+					}
+					if res {
+						return true, nil
+					}
 				}
 			}
-		case *ssa.Go:
-			if call, ok := instr.Call.Value.(*ssa.Function); ok {
-				if containsRecoverCall(call) {
-					return true, nil
-				}
-			}
-		case *ssa.Call:
-			if callee := instr.Call.Value; callee != nil {
-				if callee.Name() == "recover" {
-					return true, nil
-				}
-				//if nestedFunc, ok := callee.(*ssa.Function); ok {
-				//	if findDeferRecoverRecursive(nestedFunc, visited) {
-				//		return true
-				//	}
-				//}
-			}
-		case *ssa.MakeClosure:
-			if closureFn, ok := instr.Fn.(*ssa.Function); ok {
-				if res, _ := findDeferRecoverRecursive(closureFn, visited, fn.Recover.Index-1); res {
-					return true, nil
-				}
-			}
-			//if clousureFn, ok := instr.Fn.(*ssa.Function); ok {
-			//	if clousureFn.Recover != nil {
-			//		return findDeferRecoverRecursive(clousureFn, visited, clousureFn.Recover.Index-1)
-			//	}
-			//}
 		}
 	}
 	return false, nil
