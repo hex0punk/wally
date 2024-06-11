@@ -2,6 +2,7 @@ package callmapper
 
 import (
 	"container/list"
+	"errors"
 	"fmt"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
@@ -140,7 +141,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		currentPath := current.Path
 
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
-		limitFuncs := len(currentPath) >= options.MaxFuncs
+		limitFuncs := options.MaxFuncs > 0 && len(currentPath) >= options.MaxFuncs
 		if len(currentNode.In) == 0 || limitFuncs {
 			paths.InsertPaths(currentPath, limitFuncs)
 			continue
@@ -170,7 +171,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				continue
 			}
 
-			if queue.Len()+len(paths.Paths) >= options.MaxPaths {
+			if options.MaxPaths > 0 && queue.Len()+len(paths.Paths) >= options.MaxPaths {
 				pathLimited = true
 				break
 			}
@@ -186,19 +187,6 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		paths.InsertPaths(bfsNode.Path, false)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
-}
-
-// Only to be used when debugging
-func printQueue(queue *list.List) {
-	fmt.Println()
-	fmt.Println()
-	fmt.Println("Current Queue:")
-	for e := queue.Front(); e != nil; e = e.Next() {
-		bfsNode := e.Value.(BFSNode)
-		fmt.Printf("Node: %s, Path: %v\n", bfsNode.Node.Func.Name(), bfsNode.Path)
-	}
-	fmt.Println("End of Queue")
-	fmt.Println()
 }
 
 func shouldSkipNode(e *callgraph.Edge, options Options) bool {
@@ -225,8 +213,14 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 
 		fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
 
-		if s.Func.Recover != nil && findDeferRecover(s.Func, s.Func.Recover.Index-1) {
-			return append(path, fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp))
+		if s.Func.Recover != nil {
+			hasRecover, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
+			if err != nil {
+				return append(path, fmt.Sprintf("[%s] (error detecting recoverable) %s", s.Func.Name(), fp))
+			}
+			if hasRecover {
+				return append(path, fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp))
+			}
 		}
 		return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), fp))
 	} else {
@@ -237,28 +231,26 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 
 func passesFilter(node *callgraph.Node, filter string) bool {
 	if node.Func != nil && node.Func.Pkg != nil {
-		if node.Func.Name() == "UnaryInterceptor" {
-			fmt.Println(node.Func.Recover.String())
-		}
 		return strings.HasPrefix(node.Func.Pkg.Pkg.Path(), filter) || node.Func.Pkg.Pkg.Path() == "main"
 	}
 	return false
 }
 
-func findDeferRecover(fn *ssa.Function, idx int) bool {
+func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
 	visited := make(map[*ssa.Function]bool)
 	return findDeferRecoverRecursive(fn, visited, idx)
 }
 
-func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool, idx int) bool {
+func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool, idx int) (bool, error) {
 	if visited[fn] {
-		return false
+		return false, nil
 	}
 
 	visited[fn] = true
 
+	// TODO: Test using the Recover index from the incoming function anyway
 	if len(fn.Blocks) < idx {
-		return false
+		return false, errors.New("Unexpected error finding recover block")
 	}
 
 	recoverBlock := fn.Blocks[idx]
@@ -268,19 +260,19 @@ func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool,
 		case *ssa.Defer:
 			if call, ok := instr.Call.Value.(*ssa.Function); ok {
 				if containsRecoverCall(call) {
-					return true
+					return true, nil
 				}
 			}
 		case *ssa.Go:
 			if call, ok := instr.Call.Value.(*ssa.Function); ok {
 				if containsRecoverCall(call) {
-					return true
+					return true, nil
 				}
 			}
 		case *ssa.Call:
 			if callee := instr.Call.Value; callee != nil {
 				if callee.Name() == "recover" {
-					return true
+					return true, nil
 				}
 				//if nestedFunc, ok := callee.(*ssa.Function); ok {
 				//	if findDeferRecoverRecursive(nestedFunc, visited) {
@@ -290,13 +282,11 @@ func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool,
 			}
 		case *ssa.MakeClosure:
 			if fn, ok := instr.Fn.(*ssa.Function); ok {
-				if findDeferRecoverRecursive(fn, visited, idx) {
-					return true
-				}
+				return findDeferRecoverRecursive(fn, visited, idx)
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
 func containsRecoverCall(fn *ssa.Function) bool {
@@ -317,4 +307,17 @@ func isRecoverCall(instr ssa.Instruction) bool {
 		}
 	}
 	return false
+}
+
+// Only to be used when debugging
+func printQueue(queue *list.List) {
+	fmt.Println()
+	fmt.Println()
+	fmt.Println("Current Queue:")
+	for e := queue.Front(); e != nil; e = e.Next() {
+		bfsNode := e.Value.(BFSNode)
+		fmt.Printf("Node: %s, Path: %v\n", bfsNode.Node.Func.Name(), bfsNode.Path)
+	}
+	fmt.Println("End of Queue")
+	fmt.Println()
 }
