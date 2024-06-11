@@ -113,6 +113,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	}
 }
 
+// TODO: this should be path of the callpath structs in match pkg
 type BFSNode struct {
 	ID   int
 	Node *callgraph.Node
@@ -121,44 +122,42 @@ type BFSNode struct {
 
 func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *match.CallPaths, options Options) {
 	queue := list.New()
-	queue.PushBack(BFSNode{ID: start.ID, Node: start, Path: initialPath})
+	queue.PushBack(BFSNode{Node: start, Path: initialPath})
 
-	//currId := 0
-	for queue.Len() > 0 && (options.MaxPaths == 0 || len(paths.Paths) < options.MaxPaths) {
-		//if queue.Len()+len(paths.Paths) >= options.MaxPaths {
+	pathLimited := false
+	for queue.Len() > 0 {
+		//if options.MaxPaths > 0 && len(paths.Paths)+queue.Len() >= options.MaxPaths {
+		//	pathLimited = true
 		//	break
 		//}
-		//fmt.Println("one")
-		//printQueue(queue)
 		// we process the first node - on first iteration, it'd be [Normalize] cogs/cogs.go:156:19 --->
 		bfsNodeElm := queue.Front()
 		// We remove last elm so we can put it in the front after updating it with new paths
 		queue.Remove(bfsNodeElm)
 
 		current := bfsNodeElm.Value.(BFSNode)
-		//currentID := current.ID
 		currentNode := current.Node
 		currentPath := current.Path
 
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
-		if len(currentNode.In) == 0 || len(currentPath) >= options.MaxFuncs {
-			paths.InsertPaths(currentPath, false)
+		limitFuncs := len(currentPath) >= options.MaxFuncs
+		if len(currentNode.In) == 0 || limitFuncs {
+			paths.InsertPaths(currentPath, limitFuncs)
 			continue
 		}
 
 		newPath := appendNodeToPath(currentNode, currentPath, options, nil)
 
-		//fmt.Println("two")
-		//printQueue(queue)
-		// Turns out there ARE nodes that call the currentNode
-		//beforeLen := len(newPath)
 		allOutsideModule := true
 		for _, e := range currentNode.In {
 			if callerInPath(e, newPath) {
 				continue
 			}
 			// Do we care about this node, or is it in the path already (if it calls itself)?
-			if !shouldSkipNode(e, options) {
+			if e.Caller == nil {
+				continue
+			}
+			if passesFilter(e.Caller, options.Filter) {
 				// We care. So let's create a copy of the path. On first iteration this has only our two intial nodes
 				newPathCopy := make([]string, len(newPath))
 				copy(newPathCopy, newPath)
@@ -168,32 +167,28 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
 				allOutsideModule = false
 			} else {
-				// TODO: the problem here is that we need a way to find out
-				// whether any paths were added at all if the node was skipped AND nodes were pushed that require
-				// us to keep looking
-
-				// but keep checking the other INs nodes (if there are more) in case there are more nodes we do care about
 				continue
 			}
 
-			//fmt.Println("three")
-			//printQueue(queue)
 			if queue.Len()+len(paths.Paths) >= options.MaxPaths {
+				pathLimited = true
 				break
 			}
 		}
 		if allOutsideModule {
-			paths.InsertPaths(currentPath, false)
+			paths.InsertPaths(currentPath, true)
 		}
 	}
+
+	// Insert whataver is left by now
 	for e := queue.Front(); e != nil; e = e.Next() {
-		fmt.Println("adding")
 		bfsNode := e.Value.(BFSNode)
 		paths.InsertPaths(bfsNode.Path, false)
+		cm.Match.SSA.PathLimited = pathLimited
 	}
 }
 
-// Function to print all elements in the queue
+// Only to be used when debugging
 func printQueue(queue *list.List) {
 	fmt.Println()
 	fmt.Println()
@@ -227,22 +222,10 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 		if options.PrintNodes || s.Func.Package() == nil {
 			return append(path, s.String())
 		}
+
 		fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
-		if fp == "services/webber/main/webber/webber.go:372:20" {
-			from := ""
-			to := ""
-			for idx, ins := range s.Func.Recover.Instrs {
-				recFp := wallylib.GetFormattedPos(s.Func.Package(), ins.Pos())
-				if idx == 0 {
-					from = recFp
-				}
-				if idx == len(s.Func.Recover.Instrs)-1 {
-					to = recFp
-				}
-			}
-			fmt.Println(from, to)
-		}
-		if s.Func.Recover != nil {
+
+		if s.Func.Recover != nil && findDeferRecover(s.Func, s.Func.Recover.Index-1) {
 			return append(path, fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp))
 		}
 		return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), fp))
@@ -254,7 +237,84 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 
 func passesFilter(node *callgraph.Node, filter string) bool {
 	if node.Func != nil && node.Func.Pkg != nil {
-		return strings.HasPrefix(node.Func.Pkg.Pkg.Path(), filter)
+		if node.Func.Name() == "UnaryInterceptor" {
+			fmt.Println(node.Func.Recover.String())
+		}
+		return strings.HasPrefix(node.Func.Pkg.Pkg.Path(), filter) || node.Func.Pkg.Pkg.Path() == "main"
+	}
+	return false
+}
+
+func findDeferRecover(fn *ssa.Function, idx int) bool {
+	visited := make(map[*ssa.Function]bool)
+	return findDeferRecoverRecursive(fn, visited, idx)
+}
+
+func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool, idx int) bool {
+	if visited[fn] {
+		return false
+	}
+
+	visited[fn] = true
+
+	if len(fn.Blocks) < idx {
+		return false
+	}
+
+	recoverBlock := fn.Blocks[idx]
+
+	for _, instr := range recoverBlock.Instrs {
+		switch instr := instr.(type) {
+		case *ssa.Defer:
+			if call, ok := instr.Call.Value.(*ssa.Function); ok {
+				if containsRecoverCall(call) {
+					return true
+				}
+			}
+		case *ssa.Go:
+			if call, ok := instr.Call.Value.(*ssa.Function); ok {
+				if containsRecoverCall(call) {
+					return true
+				}
+			}
+		case *ssa.Call:
+			if callee := instr.Call.Value; callee != nil {
+				if callee.Name() == "recover" {
+					return true
+				}
+				//if nestedFunc, ok := callee.(*ssa.Function); ok {
+				//	if findDeferRecoverRecursive(nestedFunc, visited) {
+				//		return true
+				//	}
+				//}
+			}
+		case *ssa.MakeClosure:
+			if fn, ok := instr.Fn.(*ssa.Function); ok {
+				if findDeferRecoverRecursive(fn, visited, idx) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func containsRecoverCall(fn *ssa.Function) bool {
+	for _, block := range fn.Blocks {
+		for _, instr := range block.Instrs {
+			if isRecoverCall(instr) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isRecoverCall(instr ssa.Instruction) bool {
+	if callInstr, ok := instr.(*ssa.Call); ok {
+		if callee, ok := callInstr.Call.Value.(*ssa.Builtin); ok {
+			return callee.Name() == "recover"
+		}
 	}
 	return false
 }
