@@ -35,10 +35,11 @@ type CallPaths struct {
 }
 
 type CallPath struct {
-	ID          int
-	Nodes       []*Node
-	NodeLimited bool
-	Recoverable bool
+	ID            int
+	Nodes         []*Node
+	NodeLimited   bool
+	FilterLimited bool
+	Recoverable   bool
 }
 
 type Node struct {

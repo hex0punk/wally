@@ -109,6 +109,9 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 			cm.Match.SSA.PathLimited = true
 			continue
 		}
+
+		// TODO: This $bound check initially was added because it appeard that we ended up hitting the
+		// end of functions that could be realitically reached by the program, but this may be an incorrect assumption
 		if strings.HasSuffix(e.Caller.Func.Name(), "$bound") {
 			paths.InsertPaths(newPath, false)
 			return
