@@ -58,6 +58,9 @@ func PrintMach(match match.RouteMatch) {
 			if paths.NodeLimited {
 				fmt.Printf(" (node limited)")
 			}
+			if paths.FilterLimited {
+				fmt.Printf(" (filter limited)")
+			}
 			if paths.Recoverable {
 				fmt.Printf(" (RECOVERABLE)")
 			}

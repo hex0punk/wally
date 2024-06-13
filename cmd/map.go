@@ -18,18 +18,19 @@ var (
 	config      string
 	wallyConfig WallyConfig
 
-	paths       []string
-	runSSA      bool
-	filter      string
-	graph       string
-	maxFuncs    int
-	maxPaths    int
-	printNodes  bool
-	format      string
-	outputFile  string
-	serverGraph bool
-	skipDefault bool
-	searchAlg   string
+	paths             []string
+	runSSA            bool
+	filter            string
+	graph             string
+	maxFuncs          int
+	maxPaths          int
+	printNodes        bool
+	format            string
+	outputFile        string
+	serverGraph       bool
+	skipDefault       bool
+	continueAfterMain bool
+	searchAlg         string
 )
 
 // mapCmd represents the map command
@@ -56,6 +57,7 @@ func init() {
 	rootCmd.AddCommand(mapCmd)
 
 	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
+	mapCmd.PersistentFlags().BoolVar(&continueAfterMain, "continue-after-main", false, "continue callpath search even after reaching main")
 	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 
 	mapCmd.PersistentFlags().StringSliceVarP(&paths, "paths", "p", paths, "The comma separated package paths to target. Use ./.. for current directory and subdirectories")
@@ -83,11 +85,12 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	nav.MapRoutes(paths)
 	if runSSA {
 		mapperOptions := callmapper.Options{
-			Filter:     filter,
-			MaxFuncs:   maxFuncs,
-			MaxPaths:   maxPaths,
-			PrintNodes: printNodes,
-			SearchAlg:  callmapper.SearchAlgs[searchAlg],
+			Filter:            filter,
+			MaxFuncs:          maxFuncs,
+			MaxPaths:          maxPaths,
+			PrintNodes:        printNodes,
+			SearchAlg:         callmapper.SearchAlgs[searchAlg],
+			ContinueAfterMain: continueAfterMain,
 		}
 		nav.Logger.Info("Solving call paths")
 		nav.SolveCallPaths(mapperOptions)

@@ -48,8 +48,8 @@ type Node struct {
 	Func       *ssa.Function
 }
 
-func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool) {
-	callPath := CallPath{NodeLimited: nodeLimited}
+func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited bool) {
+	callPath := CallPath{NodeLimited: nodeLimited, FilterLimited: filterLimited}
 
 	for _, node := range nodes {
 		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node})

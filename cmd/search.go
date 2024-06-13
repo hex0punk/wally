@@ -47,10 +47,12 @@ func searchFunc(cmd *cobra.Command, args []string) {
 	nav.RunSSA = true
 
 	mapperOptions := callmapper.Options{
-		Filter:     filter,
-		MaxFuncs:   maxFuncs,
-		MaxPaths:   maxPaths,
-		PrintNodes: printNodes,
+		Filter:            filter,
+		MaxFuncs:          maxFuncs,
+		MaxPaths:          maxPaths,
+		PrintNodes:        printNodes,
+		ContinueAfterMain: continueAfterMain,
+		SearchAlg:         callmapper.SearchAlgs[searchAlg],
 	}
 
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))

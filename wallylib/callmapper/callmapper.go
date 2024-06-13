@@ -21,6 +21,7 @@ const (
 type CallMapper struct {
 	Options Options
 	Match   *match.RouteMatch
+	Stop    bool
 }
 
 var SearchAlgs = map[string]SearchAlgorithm{
@@ -35,11 +36,12 @@ type BFSNode struct {
 }
 
 type Options struct {
-	Filter     string
-	MaxFuncs   int
-	MaxPaths   int
-	PrintNodes bool
-	SearchAlg  SearchAlgorithm
+	Filter            string
+	MaxFuncs          int
+	MaxPaths          int
+	ContinueAfterMain bool
+	PrintNodes        bool
+	SearchAlg         SearchAlgorithm
 }
 
 func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
@@ -85,22 +87,29 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
 	newPath := appendNodeToPath(destination, path, options, site)
+	if (destination.Func.Name() == "main" || destination.Func.Name() == "main$1") && !options.ContinueAfterMain {
+		paths.InsertPaths(newPath, false, false)
+		cm.Stop = false
+		return
+	}
 
 	mustStop := options.MaxFuncs > 0 && len(newPath) >= options.MaxFuncs
-	if len(destination.In) == 0 || mustStop {
-		paths.InsertPaths(newPath, mustStop)
+	if len(destination.In) == 0 || mustStop || cm.Stop {
+		paths.InsertPaths(newPath, mustStop, cm.Stop)
+		cm.Stop = false
 		return
 	}
 
 	// Avoids recursion within a single callpath
 	if visited[destination.ID] {
-		paths.InsertPaths(newPath, false)
+		paths.InsertPaths(newPath, false, false)
 		return
 	}
 	visited[destination.ID] = true
 
 	defer delete(visited, destination.ID)
 
+	allOutsideModule := true
 	for _, e := range destination.In {
 		//if options.MaxFuncs > 0 && (len(newPath) > options.MaxFuncs) {
 		//	continue
@@ -109,19 +118,18 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 			cm.Match.SSA.PathLimited = true
 			continue
 		}
-
-		// TODO: This $bound check initially was added because it appeard that we ended up hitting the
-		// end of functions that could be realitically reached by the program, but this may be an incorrect assumption
-		if strings.HasSuffix(e.Caller.Func.Name(), "$bound") {
-			paths.InsertPaths(newPath, false)
-			return
-		} else {
-			if !visited[e.Caller.ID] {
-				if e.Caller != nil && !shouldSkipNode(e, options) && !visited[e.Caller.ID] {
-					cm.DFS(e.Caller, visited, newPath, paths, options, e.Site)
-				}
-			}
+		if visited[e.Caller.ID] {
+			continue
 		}
+		if !shouldSkipNode(e, options) {
+			allOutsideModule = false
+			cm.DFS(e.Caller, visited, newPath, paths, options, e.Site)
+		}
+	}
+	if allOutsideModule {
+		// TODO: This is a quick and dirty solution to marking a path as going outside the module
+		// This should be handled diffirently and not abuse CallMapper struct
+		cm.Stop = true
 	}
 }
 
@@ -140,10 +148,15 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		currentNode := current.Node
 		currentPath := current.Path
 
+		if (currentNode.Func.Name() == "main" || currentNode.Func.Name() == "main$1") && !options.ContinueAfterMain {
+			paths.InsertPaths(currentPath, false, false)
+			continue
+		}
+
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
 		limitFuncs := options.MaxFuncs > 0 && len(currentPath) >= options.MaxFuncs
 		if len(currentNode.In) == 0 || limitFuncs {
-			paths.InsertPaths(currentPath, limitFuncs)
+			paths.InsertPaths(currentPath, limitFuncs, false)
 			continue
 		}
 
@@ -174,14 +187,14 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			}
 		}
 		if allOutsideModule {
-			paths.InsertPaths(currentPath, true)
+			paths.InsertPaths(currentPath, false, true)
 		}
 	}
 
 	// Insert whataver is left by now
 	for e := queue.Front(); e != nil; e = e.Next() {
 		bfsNode := e.Value.(BFSNode)
-		paths.InsertPaths(bfsNode.Path, false)
+		paths.InsertPaths(bfsNode.Path, false, false)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
 }
@@ -213,14 +226,14 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 	}
 
 	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
-	nodeDescription := fmt.Sprintf("[%s] %s", s.Func.Name(), fp)
+	nodeDescription := fmt.Sprintf("%s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), fp)
 
 	if s.Func.Recover != nil {
 		hasRecover, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
 		if err != nil {
-			nodeDescription = fmt.Sprintf("[%s] (%s) %s", s.Func.Name(), err.Error(), fp)
+			nodeDescription = fmt.Sprintf("%s.[%s] (%s) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), err.Error(), fp)
 		} else if hasRecover {
-			nodeDescription = fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), fp)
+			nodeDescription = fmt.Sprintf("%s.[%s] (recoverable) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), fp)
 		}
 	}
 	return append(path, nodeDescription)

@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"log"
 	"log/slog"
 	"os"
 	"wally/checker"
@@ -69,6 +70,14 @@ func (n *Navigator) MapRoutes(paths []string) {
 
 		n.Logger.Info("Generating SSA based callgraph")
 		n.SSA.Callgraph = cha.CallGraph(prog)
+
+		//mains := ssautil.MainPackages(prog.AllPackages())
+		//var roots []*ssa.Function
+		//for _, m := range mains {
+		//	roots = append(roots, m.Func("init"), m.Func("main"))
+		//}
+		//res := rta.Analyze(roots, true)
+		//n.SSA.Callgraph = res.CallGraph
 	}
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
@@ -261,6 +270,10 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	for i, match := range n.RouteMatches {
 		i, match := i, match
 		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
+		if match.SSA.Edges == nil {
+			// Fail here
+			log.Fatal("Could not get callgraph from SSA. Make sure the target code can build")
+		}
 		cm := callmapper.NewCallMapper(&match, options)
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
