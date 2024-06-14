@@ -216,24 +216,6 @@ Where `-f` defines a filter for the call stack search function. If you don't do 
 > [!IMPORTANT]
 > If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `--max-paths` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `--max-paths`, `--max-funcs`, `-f`, or all three to get the results you need or expect.
 
-### Visualizing paths with wally
-
-To make visualization of callpaths easier, wally can lunch a server on localhost when via a couple methods:
-
-After an analysis by passing the `--server` flag to the `map` command. For instance:
-
-```shell
-$ wally map -p ./... -c .wally.yaml --ssa -f "github.com/hashicorp/nomad" --server
-```
-
-Or, using the `server` subcommand and passing a wally json  file:
-
-```shell
- $ wally server -p ./nomad-wally.json -P 1984
-```
-
-Next, open a browser and head to the address in the output.
-
 ### Analyzing individual paths
 
 Rather than using a yaml configuration file, you can use `wally map search` for mapping paths to individual functions. For instance:
@@ -253,7 +235,25 @@ The options above map to the following
 
 ## Using Wally in Fuzzing Efforts to Determine Fault Tolerance of Call Paths
 
-Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found here.
+Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found [here](https://hex0punk.com/posts/fault-tolerance-detection-with-wally/).
+
+### Visualizing paths with wally
+
+To make visualization of callpaths easier, wally can lunch a server on localhost when via a couple methods:
+
+After an analysis by passing the `--server` flag to the `map` command. For instance:
+
+```shell
+$ wally map -p ./... -c .wally.yaml --ssa -f "github.com/hashicorp/nomad" --server
+```
+
+Or, using the `server` subcommand and passing a wally json  file:
+
+```shell
+ $ wally server -p ./nomad-wally.json -P 1984
+```
+
+Next, open a browser and head to the address in the output.
 
 ## Exploring the graph with wally server
 
