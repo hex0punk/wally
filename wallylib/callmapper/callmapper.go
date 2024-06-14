@@ -60,7 +60,7 @@ func (cm *CallMapper) initPath(s *callgraph.Node) ([]string, string) {
 			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), err.Error(), basePos)
 		}
 		if rec {
-			baseStr = fmt.Sprintf("%.[%s] (recoverable) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), basePos)
+			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), basePos)
 		}
 	}
 	initialPath := []string{
