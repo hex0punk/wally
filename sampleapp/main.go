@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/hex0punk/wally/samppleapp/printer"
-	"github.com/hex0punk/wally/samppleapp/safe"
+	"github.com/hex0punk/wally/sampleapp/printer"
+	"github.com/hex0punk/wally/sampleapp/safe"
 )
 
 func main() {

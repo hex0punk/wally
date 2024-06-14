@@ -163,12 +163,20 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		newPath := appendNodeToPath(currentNode, currentPath, options, nil)
 
 		allOutsideModule := true
+		allOutsideMainPkg := true
+		allOutsidePath := true
 		for _, e := range currentNode.In {
 			// Do we care about this node, or is it in the path already (if it calls itself)?
 			if callerInPath(e, newPath) {
 				continue
 			}
 			if passesFilter(e.Caller, options.Filter) {
+				if (currentNode.Func.Package().Pkg.Name()) == "main" && e.Caller.Func.Package().Pkg.Name() != "main" && !strings.Contains(e.Caller.Func.Name(), "$") && !options.ContinueAfterMain {
+					allOutsideModule = false
+					allOutsidePath = false
+					//paths.InsertPaths(currentPath, false, false)
+					continue
+				}
 				// We care. So let's create a copy of the path. On first iteration this has only our two intial nodes
 				newPathCopy := make([]string, len(newPath))
 				copy(newPathCopy, newPath)
@@ -177,6 +185,8 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				newPathWithCaller := appendNodeToPath(e.Caller, newPathCopy, options, e.Site)
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
 				allOutsideModule = false
+				allOutsideMainPkg = false
+				allOutsidePath = false
 			} else {
 				continue
 			}
@@ -185,6 +195,9 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				pathLimited = true
 				break
 			}
+		}
+		if allOutsideMainPkg && !allOutsidePath {
+			paths.InsertPaths(currentPath, false, false)
 		}
 		if allOutsideModule {
 			paths.InsertPaths(currentPath, false, true)
@@ -217,8 +230,8 @@ func callerInPath(e *callgraph.Edge, paths []string) bool {
 
 func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ssa.CallInstruction) []string {
 	if site == nil {
-		return path
-		//return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
+		//return path
+		return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
 	}
 
 	if options.PrintNodes || s.Func.Package() == nil {
