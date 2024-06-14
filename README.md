@@ -8,8 +8,8 @@ Wally is a static analysis tool for mapping function paths in code. It can be us
 
 - HTTP and gRPC route detection
 - Attack surface mapping. 
-- Automating the initial stages of threat modelling by mapping RPC and HTTP routes in Go code. 
-- Planning fuzzing efforts by examining the fault tolenrace of call paths in code.
+- Automating the initial stages of threat modeling by mapping RPC and HTTP routes in Go code. 
+- Planning fuzzing efforts by examining the fault tolerance of call paths in code.
 
 ## UI Demo
 
