@@ -66,25 +66,37 @@ func (fi *FuncInfo) matchReceiver(pkg, recvType string) bool {
 }
 
 func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
-	sel, ok := expr.(*ast.SelectorExpr)
-	if !ok {
+	var funcIdent *ast.Ident
+	var x ast.Expr
+
+	switch funcExpr := expr.(type) {
+	case *ast.Ident:
+		funcIdent = funcExpr
+	case *ast.SelectorExpr:
+		funcIdent = funcExpr.Sel
+		x = funcExpr.X
+	default:
 		return nil, errors.New("unable to get func data")
 	}
 
-	funcName := GetName(sel.Sel)
-	pkgPath, err := ResolvePackageFromIdent(sel.Sel, info)
-	if err != nil && funcName != "" {
-		// Try to get pkg name from the selector, as this is likely not a pkg.func
-		// but a struct.fun
-		pkgPath, err = ResolvePackageFromIdent(sel.X, info)
-		if err != nil {
-			return nil, err
+	funcName := GetName(funcIdent)
+	pkgPath, err := ResolvePackageFromIdent(funcIdent, info)
+	if err != nil {
+		if funcName != "" && x != nil {
+			// Try to get pkg name from the selector, as this is likely not a pkg.func
+			// but a struct.fun
+			pkgPath, err = ResolvePackageFromIdent(x, info)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, errors.New("unable to get func data")
 		}
 	}
 
 	// TODO: maybe worth returning an error if we cannot get the signature, as we don't support
 	// anonymous functions and closures as targetted functions via indicators anyway
-	sig, _ := GetFuncSignature(sel.Sel, info)
+	sig, _ := GetFuncSignature(funcIdent, info)
 
 	return &FuncInfo{
 		Package: pkgPath.Path(),
