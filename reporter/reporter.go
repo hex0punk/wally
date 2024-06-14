@@ -54,11 +54,17 @@ func PrintMach(match match.RouteMatch) {
 		}
 
 		for i, paths := range match.SSA.CallPaths.Paths {
+			fmt.Printf("	Path %d", i+1)
 			if paths.NodeLimited {
-				fmt.Printf("	Path %d (node limited):\n", i+1)
-			} else {
-				fmt.Printf("	Path %d:\n", i+1)
+				fmt.Printf(" (node limited)")
 			}
+			if paths.FilterLimited {
+				fmt.Printf(" (filter limited)")
+			}
+			if paths.Recoverable {
+				fmt.Printf(" (RECOVERABLE)")
+			}
+			fmt.Printf(":\n")
 
 			for x := len(paths.Nodes) - 1; x >= 0; x-- {
 				fmt.Printf("		%s --->\n", paths.Nodes[x].NodeString)

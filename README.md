@@ -4,7 +4,12 @@
 	</h1>
 </div>
 
-Wally is a static analysis tool for attack surface mapping. It automates the initial stages of threat modelling by mapping RPC and HTTP routes in Go code.
+Wally is a static analysis tool for mapping function paths in code. It can be used for:
+
+- HTTP and gRPC route detection
+- Attack surface mapping. 
+- Automating the initial stages of threat modelling by mapping RPC and HTTP routes in Go code. 
+- Planning fuzzing efforts by examining the fault tolenrace of call paths in code.
 
 ## UI Demo
 
@@ -32,9 +37,11 @@ Wally currently supports the following features:
 
 - Discover HTTP client calls and route listeners in your code by looking at each function name, signature, and package to make sure it finds the functions that you actually care about.
 - Wally solves the value of compile-time constant values that may be used in the functions of interest. Wally does a pretty good job at finding constants and global variables and resolving their values for you so you don't have to chase those manually in code.
+- Determine possible paths to a target function and examine the fault tolerance of such path. This is particularly useful when determining fuzzing targets or evaluating of panics discovered during fuzzing efforts.
 - Wally will report the enclosing function where the function of interest is called.
 - Wally will also give you all possible call paths to your functions of interest. This can be useful when analyzing monorepos where service A calls service B via a client function declared in service B's packages. This feature requires that the target code base is buildable.
 - Wally will output a nice PNG graph of the call stacks for the different routes it finds.
+- Determine which callpaths in code are tolerant to panics or application crashes due to bugs like nil dereferences
 
 ### Use case example
 
@@ -59,6 +66,7 @@ indicators:
     type: ""
     function: "forward"
     indicatorType: 1
+    receiverType: "ACL"    # optional 
     params:
       - name: "method"
   - id: nomad-2
@@ -66,21 +74,20 @@ indicators:
     type: ""
     function: "RPC"
     indicatorType: 1
-    params:
-      - name: "method"
+    params:               # optional
+      - name: "method"    # optional 
   - id: nomad-3
     package: "github.com/hashicorp/nomad/api"
     type: "s"
     function: "query"
     indicatorType: 1
     params:
-      - name: "endpoint"
-        pos: 0
+        pos: 0           # optioncal
 ```
 
 Note that you can specify the parameter that you want Wally to attempt to solve the value to. If you don't know the name of the parameter (per the function signature), you can give it the position in the signature. You can then use the `--config` or `-c` flag along with the path to the configuration file.
 
-## How can I play with it?
+## Route Detection
 
 A good test project to run it against is [nomad](https://github.com/hashicorp/nomad) because it has a lot of routes set up and called all over the place. I suggest the following:
 
@@ -124,7 +131,7 @@ Wally can be easily run using Docker. Follow these steps:
 6. If you have a specific configuration file (e.g., .wally.yaml), you can mount it into the container:
 
     ```bash
-    docker run -w </PROJECT> -v $(pwd):</PROJECT> -v </PATH/TO/.wally.yaml>:</PROJECT>/.wally.yaml go-wally map -c .wally.yaml -p ./... -m 50 -vvv
+    docker run -w </PROJECT> -v $(pwd):</PROJECT> -v </PATH/TO/.wally.yaml>:</PROJECT>/.wally.yaml go-wally map -c .wally.yaml -p ./... --max-paths 50 -vvv
     ```
 
    This will run Wally within a Docker container, analyzing your Go code for HTTP and RPC routes based on the specified indicators and configurations.
@@ -134,7 +141,7 @@ Wally can be easily run using Docker. Follow these steps:
 8. After running Wally, you can check the results and the generated PNG or XDOT graph output, as explained in the README.
 
 
-## Wally's features
+## Callpath analysis
 
 Wally should work even if you are not able to build the project you want to run it against. However, if you can build the project without any issues, you can run Wally using the `--ssa` flag, at which point Wally will be able to do the following:
 
@@ -145,31 +152,54 @@ When using the `--ssa` flag you can expect output like this:
 
 ```shell
 ===========MATCH===============
-Package:  net/http
-Function:  Handle
+ID:  14554c2a-41ee-4634-831d-6fc49c70c80d
+Indicator ID:  1
+Package:  github.com/hashicorp/cronexpr
+Function:  Parse
 Params:
-	pattern: "/v1/client/metadata"
-Enclosed by:  agent.registerHandlers
-Position /Users/hex0punk/Tests/nomad/command/agent/http.go:444
-Possible Paths: 6
-	Path 1:
-		n105973:(*github.com/hashicorp/nomad/command/agent.Command).Run --->
-		n24048:(*github.com/hashicorp/nomad/command/agent.Command).setupAgent --->
-		n24050:github.com/hashicorp/nomad/command/agent.NewHTTPServers --->
-		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
-	Path 2:
-		n104203:github.com/hashicorp/nomad/command/agent.NewTestAgent --->
-		n92695:(*github.com/hashicorp/nomad/command/agent.TestAgent).Start --->
-		n32861:(*github.com/hashicorp/nomad/command/agent.TestAgent).start --->
-		n24050:github.com/hashicorp/nomad/command/agent.NewHTTPServers --->
-		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
-	Path 3:
-		n105973:(*github.com/hashicorp/nomad/command/agent.Command).Run --->
-		n117415:(*github.com/hashicorp/nomad/command/agent.Command).handleSignals --->
-		n79534:(*github.com/hashicorp/nomad/command/agent.Command).handleReload --->
-		n79544:(*github.com/hashicorp/nomad/command/agent.Command).reloadHTTPServer --->
-		n24050:github.com/hashicorp/nomad/command/agent.NewHTTPServers --->
-		n47976:(*github.com/hashicorp/nomad/command/agent.HTTPServer).registerHandlers --->
+Enclosed by:  (*github.com/hashicorp/nomad/nomad/structs.PeriodicConfig).Validate
+Position /Users/hex0punk/Tests/nomad/nomad/structs/structs.go:5638
+Possible Paths: 1
+	Path 1 (filter limited):
+		[Validate] nomad/structs/structs.go:5614:26 --->
+
+===========MATCH===============
+ID:  6a876579-6b72-4501-af5b-5028c84a1c77
+Indicator ID:  1
+Package:  github.com/hashicorp/cronexpr
+Function:  Parse
+Params:
+Enclosed by:  (*github.com/hashicorp/nomad/nomad/structs.PeriodicConfig).Validate
+Position /Users/hex0punk/Tests/nomad/nomad/structs/structs.go:5644
+Possible Paths: 1
+	Path 1 (filter limited):
+		[Validate] nomad/structs/structs.go:5614:26 --->
+
+===========MATCH===============
+ID:  eeaa94b1-28a8-41b8-a1e3-7a0d665a1e4d
+Indicator ID:  1
+Package:  github.com/hashicorp/cronexpr
+Function:  Parse
+Params:
+Enclosed by:  github.com/hashicorp/nomad/nomad/structs.CronParseNext
+Position /Users/hex0punk/Tests/nomad/nomad/structs/structs.go:5677
+Possible Paths: 28
+	Path 1 (RECOVERABLE):
+		nomad.[Plan] nomad/job_endpoint.go:1949:57 --->
+		structs.[Next] nomad/structs/structs.go:5693:24 --->
+		[CronParseNext] (recoverable) nomad/structs/structs.go:5670:6 --->
+	Path 2 (RECOVERABLE):
+		nomad.[Plan] nomad/job_endpoint.go:1949:57 --->
+		structs.[Next] nomad/structs/structs.go:5699:27 --->
+		[CronParseNext] (recoverable) nomad/structs/structs.go:5670:6 --->
+	Path 3 (node limited) (RECOVERABLE):
+		nomad.[leaderLoop] nomad/leader.go:247:34 --->
+		nomad.[establishLeadership] nomad/leader.go:412:33 --->
+		nomad.[SetEnabled] nomad/periodic.go:167:3 --->
+		nomad.[run] nomad/periodic.go:332:14 --->
+		nomad.[dispatch] nomad/periodic.go:342:38 --->
+		structs.[Next] nomad/structs/structs.go:5693:24 --->
+		[CronParseNext] (recoverable) nomad/structs/structs.go:5670:6 --->
 ```
 
 ### Filtering call path analysis
@@ -178,13 +208,13 @@ Possible Paths: 6
 > When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. In most cases, you'd want to filter analysis to only the module you want to target. For instance, when using wally to find HTTP and gRPC routes in nomad, you'd want to type the command below. 
 
 ```shell
-$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" -m 50
+$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" --max-paths 50
 ```
 
 Where `-f` defines a filter for the call stack search function. If you don't do this, wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests.
 
 > [!IMPORTANT]
-> If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `-m` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `-m`, `-l`, `-f`, or all three to get the results you need or expect.
+> If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `--max-paths` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `--max-paths`, `--max-funcs`, `-f`, or all three to get the results you need or expect.
 
 ### Visualizing paths with wally
 
@@ -202,9 +232,30 @@ Or, using the `server` subcommand and passing a wally json  file:
  $ wally server -p ./nomad-wally.json -P 1984
 ```
 
-Next, open a browser and head to the address in the output. 
+Next, open a browser and head to the address in the output.
 
-#### Exploring the graph with wally server
+### Analyzing individual paths
+
+Rather than using a yaml configuration file, you can use `wally map search` for mapping paths to individual functions. For instance:
+
+```bash
+$ wally map search  -p ./... --func Parse --pkg github.com/hashicorp/cronexpr --max-funcs 7 --max-paths 50 -f github.com/hashicorp/ -vvv
+```
+The options above map to the following
+
+- `-p ./...`: Target code is in the current directory
+- `--func Parse`: We are interested only in the `Parse` function
+- `--pkg github.com/hashicorp/cronexpr`: Of package `github.com/hashicorp/cronexpr`
+- `--max-funcs 7`: We only want up to 7 functions per path
+- `--max-paths 50`: Limit the paths to 50
+- `-vvv`: Very, very verbose
+- `-f github.com/hashicorp/`: This tells Wally that we are only interested in paths within packages that start with `github.com/hashicorp/`. This avoids getting paths that reach beyond the scope we are interested in. Otherwise, we'd get nodes in standard Go libraries, etc.
+
+## Using Wally in Fuzzing Efforts to Determine Fault Tolerance of Call Paths
+
+Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found here.
+
+## Exploring the graph with wally server
 
 Graphs are generated using the [cosmograph](https://cosmograph.app/) library. Each node represents a function call in code. The colors are not random. Each color has a a different purpose to help you make good use of the graph.
 
@@ -220,15 +271,15 @@ Graphs are generated using the [cosmograph](https://cosmograph.app/) library. Ea
 ![](assets/dual-node.svg)
 <span style="vertical-align: top;">This node servers both as the root node to a path and an intermediary node for one or more paths</span>
 
-#### Viewing paths
+### Viewing paths
 
 Clicking on any node will highlight all possible paths to that node. Click anywhere other than a node to exist the path selection view.
 
-#### Viewing findings
+### Viewing findings
 
 Clicking on any finding node will populate the section on the left with information about the finding.
 
-#### Searching nodes
+### Searching nodes
 
 Start typing on the search bar on the left to find a node by name. 
 
@@ -246,9 +297,11 @@ From _nomad/command/agent_ will output this graph:
 
 Specifying a filename with a `.xdot` extension will create an [xdot](https://graphviz.org/docs/outputs/canon/#xdot) file instead.
 
-## Guesser mode
+## Advanced options
 
-In the future, Wally will be able to make educated guesses for potential HTTP or RPC routes with no additional indicators. For now, you can define indicators with a wildcard package (`"*"`) if you are not able (or don't want) to tell Wally which package each function may be coming from.
+- You can specify which algorithm to use for the intial callgraph generation using `--callgraph-alg`. This is the algorithm used by the `golang.org/x/tools/` function. Options include `cha` (default), [`rta`](https://pkg.go.dev/golang.org/x/tools/go/callgraph/rta), and [`vta`](https://pkg.go.dev/golang.org/x/tools/go/callgraph/vta).
+- By default, wally uses a breathd search first algorithm to map all paths. You can instead use depth first search using `--search-alg dfs`
+- Whenever Wally sees it reaches a `main` function, it will stop going further back in the tree to avoid reporting inaccurate paths. If you wish, you can override this by using the `--continue-after-main` flag, allowing you to see some interesting but less likely paths.
 
 ## The power of Wally
 
@@ -278,6 +331,12 @@ Viewing the description of each command
 
 ```Shell
 $ wally map --help
+```
+
+#### `map search` (single function)
+
+```Shell
+$ wally map search --help
 ```
 
 ### `server`

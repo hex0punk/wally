@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
+	"strings"
 	"wally/indicator"
 )
 
@@ -34,32 +35,28 @@ type CallPaths struct {
 }
 
 type CallPath struct {
-	ID          int
-	Nodes       []*Node
-	NodeLimited bool
+	ID            int
+	Nodes         []*Node
+	NodeLimited   bool
+	FilterLimited bool
+	Recoverable   bool
 }
 
 type Node struct {
 	NodeString string
-	Pkg        ssa.Package
-	Func       ssa.Function
+	Pkg        *ssa.Package
+	Func       *ssa.Function
 }
 
-func PrintTheThing(paths [][]string) {
-	for _, node := range paths {
-		fmt.Println("NODE: ", node)
-		for i, p := range node {
-			fmt.Printf("%d		Path: %s\n", i, p)
-		}
-		fmt.Println("===============================")
-	}
-}
-
-func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool) {
-	callPath := CallPath{NodeLimited: nodeLimited}
+func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited bool) {
+	callPath := CallPath{NodeLimited: nodeLimited, FilterLimited: filterLimited}
 
 	for _, node := range nodes {
 		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node})
+		// Temp hack while we replace nodes with a structure containing parts of a path (func, pkg, etc.)
+		if strings.Contains(node, "(recoverable)") {
+			callPath.Recoverable = true
+		}
 	}
 	cp.Paths = append(cp.Paths, &callPath)
 }

@@ -5,16 +5,16 @@ indicators:
     indicatorType: 1
     params:
       - name: "method"
-  - package: "github.com/hashicorp/nomad/nomad"
-    type: ""
-    function: "RPC"
-    indicatorType: 1
-    params:
-      - name: "method"
-  - package: "github.com/hashicorp/nomad/api"
-    type: "s"
-    function: "query"
-    indicatorType: 1
-    params:
-      - name: "endpoint"
-        pos: 0
+#  - package: "github.com/hashicorp/nomad/nomad"
+#    type: ""
+#    function: "RPC"
+#    indicatorType: 1
+#    params:
+#      - name: "method"
+#  - package: "github.com/hashicorp/nomad/api"
+#    type: "s"
+#    function: "query"
+#    indicatorType: 1
+#    params:
+#      - name: "endpoint"
+#        pos: 0

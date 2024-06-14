@@ -23,6 +23,7 @@ type Indicator struct {
 	Function      string        `yaml:"function"`
 	Params        []RouteParam  `yaml:"params"`
 	IndicatorType IndicatorType `yaml:"indicatorType"`
+	ReceiverType  string        `yaml:"receiverType"`
 }
 
 type RouteParam struct {
@@ -30,8 +31,12 @@ type RouteParam struct {
 	Pos  int    `yaml:"pos"`
 }
 
-func InitIndicators(customIndicators []Indicator) []Indicator {
-	indicators := getStockIndicators()
+func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator {
+	indicators := []Indicator{}
+	if !skipDefault {
+		indicators = getStockIndicators()
+	}
+
 	if customIndicators != nil && len(customIndicators) > 0 {
 		fmt.Println("Loading custom indicator")
 		idStart := len(indicators)
@@ -42,6 +47,9 @@ func InitIndicators(customIndicators []Indicator) []Indicator {
 			}
 			fmt.Println("Pkg: ", indCpy.Package)
 			fmt.Println("Func: ", indCpy.Function)
+			if indCpy.ReceiverType != "" {
+				fmt.Println("Receiver Type: ", indCpy.ReceiverType)
+			}
 			fmt.Println()
 			indicators = append(indicators, indCpy)
 		}

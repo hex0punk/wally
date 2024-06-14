@@ -12,9 +12,12 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
+	"golang.org/x/tools/go/callgraph/rta"
+	"golang.org/x/tools/go/callgraph/vta"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"log"
 	"log/slog"
 	"os"
 	"wally/checker"
@@ -36,6 +39,7 @@ type Navigator struct {
 	RouteMatches    []match.RouteMatch
 	RunSSA          bool
 	Packages        []*packages.Package
+	CallgraphAlg    string
 }
 
 type SSA struct {
@@ -48,6 +52,20 @@ func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
 		Logger:          logger.NewLogger(logLevel),
 		RouteIndicators: indicators,
 	}
+}
+
+// Copied from https://github.com/golang/tools/blob/master/cmd/callgraph/main.go#L291C1-L302C2
+func mainPackages(pkgs []*ssa.Package) ([]*ssa.Package, error) {
+	var mains []*ssa.Package
+	for _, p := range pkgs {
+		if p != nil && p.Pkg.Name() == "main" && p.Func("main") != nil {
+			mains = append(mains, p)
+		}
+	}
+	if len(mains) == 0 {
+		return nil, fmt.Errorf("no main packages")
+	}
+	return mains, nil
 }
 
 func (n *Navigator) MapRoutes(paths []string) {
@@ -63,12 +81,29 @@ func (n *Navigator) MapRoutes(paths []string) {
 		n.SSA = &SSA{
 			Packages: []*ssa.Package{},
 		}
-		prog, ssaPkgs := ssautil.AllPackages(pkgs, 0)
+		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
 		n.SSA.Packages = ssaPkgs
 		prog.Build()
 
 		n.Logger.Info("Generating SSA based callgraph")
+		switch n.CallgraphAlg {
+		case "cha":
+			n.SSA.Callgraph = cha.CallGraph(prog)
+		case "rta":
+			mains := ssautil.MainPackages(ssaPkgs)
+			var roots []*ssa.Function
+			for _, main := range mains {
+				roots = append(roots, main.Func("init"), main.Func("main"))
+			}
+			rtares := rta.Analyze(roots, true)
+			n.SSA.Callgraph = rtares.CallGraph
+		case "vta":
+			n.SSA.Callgraph = vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+		default:
+			log.Fatalf("Unknown callgraph alg %s", n.CallgraphAlg)
+		}
 		n.SSA.Callgraph = cha.CallGraph(prog)
+
 	}
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
@@ -157,6 +192,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.CallExpr)(nil),
 		(*ast.GenDecl)(nil),
 		(*ast.AssignStmt)(nil),
+		(*ast.DeclStmt)(nil),
 	}
 
 	results := []match.RouteMatch{}
@@ -166,6 +202,12 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
 		if gen, ok := node.(*ast.GenDecl); ok {
 			n.RecordGlobals(gen, pass)
+		}
+
+		if gen3, ok := node.(*ast.DeclStmt); ok {
+			if gen2, ok := gen3.Decl.(*ast.GenDecl); ok {
+				n.RecordGlobals(gen2, pass)
+			}
 		}
 
 		if stmt, ok := node.(*ast.AssignStmt); ok {
@@ -196,11 +238,8 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Whether we are able to get params or not we have a match
 		match := match.NewRouteMatch(*route, pos)
 
-		sel, _ := funExpr.(*ast.SelectorExpr)
-
-		sig, _ := wallylib.GetFuncSignature(sel.Sel, pass.TypesInfo)
 		// Now try to get the params for methods, path, etc.
-		match.Params = wallylib.ResolveParams(route.Params, sig, ce, pass)
+		match.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
 
 		//Get the enclosing func
 		if n.RunSSA {
@@ -257,22 +296,30 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	for i, match := range n.RouteMatches {
 		i, match := i, match
 		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
+		if match.SSA.Edges == nil {
+			// Fail here
+			log.Fatal("Could not get callgraph from SSA. Make sure the target code can build")
+		}
 		cm := callmapper.NewCallMapper(&match, options)
-		n.RouteMatches[i].SSA.CallPaths = cm.AllPaths(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+		if options.SearchAlg == callmapper.Dfs {
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+		} else {
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+		}
 	}
 }
 
 // TODO: TEMP - test this but with a parm for other types such as assighmentStmt, etc
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 	for _, spec := range gen.Specs {
-
 		s, ok := spec.(*ast.ValueSpec)
 		if !ok {
 			continue
 		}
+
 		for k, id := range s.Values {
 			res := wallylib.GetValueFromExp(id, pass)
-			if res != "" {
+			if res == "" {
 				continue
 			}
 
