@@ -85,7 +85,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 		n.SSA.Packages = ssaPkgs
 		prog.Build()
 
-		n.Logger.Info("Generating SSA based callgraph")
+		n.Logger.Info("Generating SSA based callgraph", "alg", n.CallgraphAlg)
 		switch n.CallgraphAlg {
 		case "cha":
 			n.SSA.Callgraph = cha.CallGraph(prog)
