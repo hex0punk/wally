@@ -53,14 +53,14 @@ func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
 
 func (cm *CallMapper) initPath(s *callgraph.Node) ([]string, string) {
 	basePos := wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())
-	baseStr := fmt.Sprintf("[%s] %s", s.Func.Name(), basePos)
+	baseStr := fmt.Sprintf("%s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), basePos)
 	if s.Func.Recover != nil {
 		rec, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
 		if err != nil {
-			baseStr = fmt.Sprintf("[%s] (%s) %s", s.Func.Name(), err.Error(), basePos)
+			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), err.Error(), basePos)
 		}
 		if rec {
-			baseStr = fmt.Sprintf("[%s] (recoverable) %s", s.Func.Name(), basePos)
+			baseStr = fmt.Sprintf("%.[%s] (recoverable) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), basePos)
 		}
 	}
 	initialPath := []string{

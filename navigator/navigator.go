@@ -12,6 +12,8 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
+	"golang.org/x/tools/go/callgraph/rta"
+	"golang.org/x/tools/go/callgraph/vta"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
@@ -37,6 +39,7 @@ type Navigator struct {
 	RouteMatches    []match.RouteMatch
 	RunSSA          bool
 	Packages        []*packages.Package
+	CallgraphAlg    string
 }
 
 type SSA struct {
@@ -49,6 +52,20 @@ func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
 		Logger:          logger.NewLogger(logLevel),
 		RouteIndicators: indicators,
 	}
+}
+
+// Copied from https://github.com/golang/tools/blob/master/cmd/callgraph/main.go#L291C1-L302C2
+func mainPackages(pkgs []*ssa.Package) ([]*ssa.Package, error) {
+	var mains []*ssa.Package
+	for _, p := range pkgs {
+		if p != nil && p.Pkg.Name() == "main" && p.Func("main") != nil {
+			mains = append(mains, p)
+		}
+	}
+	if len(mains) == 0 {
+		return nil, fmt.Errorf("no main packages")
+	}
+	return mains, nil
 }
 
 func (n *Navigator) MapRoutes(paths []string) {
@@ -64,20 +81,29 @@ func (n *Navigator) MapRoutes(paths []string) {
 		n.SSA = &SSA{
 			Packages: []*ssa.Package{},
 		}
-		prog, ssaPkgs := ssautil.AllPackages(pkgs, 0)
+		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
 		n.SSA.Packages = ssaPkgs
 		prog.Build()
 
 		n.Logger.Info("Generating SSA based callgraph")
+		switch n.CallgraphAlg {
+		case "cha":
+			n.SSA.Callgraph = cha.CallGraph(prog)
+		case "rta":
+			mains := ssautil.MainPackages(ssaPkgs)
+			var roots []*ssa.Function
+			for _, main := range mains {
+				roots = append(roots, main.Func("init"), main.Func("main"))
+			}
+			rtares := rta.Analyze(roots, true)
+			n.SSA.Callgraph = rtares.CallGraph
+		case "vta":
+			n.SSA.Callgraph = vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+		default:
+			log.Fatalf("Unknown callgraph alg %s", n.CallgraphAlg)
+		}
 		n.SSA.Callgraph = cha.CallGraph(prog)
 
-		//mains := ssautil.MainPackages(prog.AllPackages())
-		//var roots []*ssa.Function
-		//for _, m := range mains {
-		//	roots = append(roots, m.Func("init"), m.Func("main"))
-		//}
-		//res := rta.Analyze(roots, true)
-		//n.SSA.Callgraph = res.CallGraph
 	}
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA

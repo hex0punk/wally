@@ -31,6 +31,7 @@ var (
 	skipDefault       bool
 	continueAfterMain bool
 	searchAlg         string
+	callgraphAlg      string
 )
 
 // mapCmd represents the map command
@@ -48,6 +49,10 @@ var mapCmd = &cobra.Command{
 			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s\n", searchAlg)
 		}
 
+		if callgraphAlg != "rta" && callgraphAlg != "cha" && callgraphAlg != "vta" {
+			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
+		}
+
 		return nil
 	},
 	Run: mapRoutes,
@@ -59,6 +64,7 @@ func init() {
 	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
 	mapCmd.PersistentFlags().BoolVar(&continueAfterMain, "continue-after-main", false, "continue callpath search even after reaching main")
 	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
+	mapCmd.PersistentFlags().StringVar(&callgraphAlg, "callgraph-alg", "cha", "cha || rta || vta")
 
 	mapCmd.PersistentFlags().StringSliceVarP(&paths, "paths", "p", paths, "The comma separated package paths to target. Use ./.. for current directory and subdirectories")
 	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
@@ -80,8 +86,10 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators(wallyConfig.Indicators, skipDefault)
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = runSSA
+	nav.CallgraphAlg = callgraphAlg
 
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))
+
 	nav.MapRoutes(paths)
 	if runSSA {
 		mapperOptions := callmapper.Options{
