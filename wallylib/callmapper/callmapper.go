@@ -151,26 +151,20 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 		//printQueue(queue)
 
-		if (currentNode.Func.Name() == "main" || strings.HasPrefix(currentNode.Func.Name(), "main$")) && !options.ContinueAfterMain {
+		if isMainFunc(currentNode, options) {
 			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
 
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
-		limitFuncs := options.MaxFuncs > 0 && len(currentPath) >= options.MaxFuncs
-		if len(currentNode.In) == 0 || limitFuncs {
-			paths.InsertPaths(currentPath, limitFuncs, false)
+		if limitFuncsReached(currentNode, currentPath, options) {
+			paths.InsertPaths(currentPath, true, false)
 			continue
 		}
 
 		newPath := appendNodeToPath(currentNode, currentPath, options, nil)
 
-		allOutsideFilter := true
-		allOutsideMainPkg := true
-		allAlreadyInPath := true
-		if currentNode.Func.Name() == "runServe" {
-			fmt.Println()
-		}
+		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
 		for _, e := range currentNode.In {
 			// Do we care about this node, or is it in the path already (if it calls itself)?
 			if callerInPath(e, newPath) {
@@ -216,18 +210,27 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	}
 }
 
+func limitFuncsReached(node *callgraph.Node, path []string, options Options) bool {
+	return options.MaxFuncs > 0 && len(path) >= options.MaxFuncs
+}
+
+func isMainFunc(node *callgraph.Node, options Options) bool {
+	return (node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$")) && !options.ContinueAfterMain
+}
+
 // Used to help wrangle some of the unrealistic resutls from cha.Callgraph
 func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge) bool {
-	if currentNode.Func.Package().Pkg.Name() != "main" {
+	currentPkg := currentNode.Func.Package().Pkg
+	callerPkg := e.Caller.Func.Package().Pkg
+
+	if currentPkg.Name() != "main" {
 		return false
 	}
-	if e.Caller.Func.Package().Pkg.Name() == "main" && currentNode.Func.Pkg.Pkg.Path() != e.Caller.Func.Pkg.Pkg.Path() {
-		return true
-	}
-	if e.Caller.Func.Package().Pkg.Name() != "main" && !strings.Contains(currentNode.Func.Name(), "$") {
-		return true
-	}
-	return false
+
+	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
+	isNonMainCallerOrClosure := callerPkg.Name() != "main" && !strings.Contains(currentNode.Func.Name(), "$")
+
+	return isDifferentMainPkg || isNonMainCallerOrClosure
 }
 
 func shouldSkipNode(e *callgraph.Edge, options Options) bool {
