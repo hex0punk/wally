@@ -42,7 +42,15 @@ type CallPath struct {
 	Recoverable   bool
 }
 
+type NodeType int
+
+const (
+	Site NodeType = iota
+	Function
+)
+
 type Node struct {
+	NodeType   NodeType
 	NodeString string
 	Pkg        *ssa.Package
 	Func       *ssa.Function

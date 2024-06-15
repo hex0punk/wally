@@ -231,7 +231,7 @@ func callerInPath(e *callgraph.Edge, paths []string) bool {
 func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ssa.CallInstruction) []string {
 	if site == nil {
 		//return path
-		return append(path, fmt.Sprintf("[%s] %s", s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
+		return append(path, fmt.Sprintf("Func: %s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
 	}
 
 	if options.PrintNodes || s.Func.Package() == nil {
