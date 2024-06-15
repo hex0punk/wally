@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/callgraph/rta"
+	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/callgraph/vta"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -87,6 +88,8 @@ func (n *Navigator) MapRoutes(paths []string) {
 
 		n.Logger.Info("Generating SSA based callgraph", "alg", n.CallgraphAlg)
 		switch n.CallgraphAlg {
+		case "static":
+			n.SSA.Callgraph = static.CallGraph(prog)
 		case "cha":
 			n.SSA.Callgraph = cha.CallGraph(prog)
 		case "rta":
@@ -102,8 +105,6 @@ func (n *Navigator) MapRoutes(paths []string) {
 		default:
 			log.Fatalf("Unknown callgraph alg %s", n.CallgraphAlg)
 		}
-		n.SSA.Callgraph = cha.CallGraph(prog)
-
 	}
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
@@ -245,9 +246,12 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		if n.RunSSA {
 			ssapkg := n.SSAPkgFromTypesPackage(pass.Pkg)
 			if ssapkg != nil {
-				if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaFunc != nil {
-					match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaFunc.Name())
-					match.SSA.EnclosedByFunc = ssaFunc
+				if ssaFunc := n.SSAFuncFromCeFunc(ce, ssapkg, pass.TypesInfo); ssaFunc != nil {
+					match.SSA.SSAFunc = ssaFunc
+				}
+				if ssaEnclosingFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaEnclosingFunc != nil {
+					match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
+					match.SSA.EnclosedByFunc = ssaEnclosingFunc
 				}
 			}
 		} else {
@@ -260,6 +264,50 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	})
 
 	return results, nil
+}
+
+func (n *Navigator) SSAFuncFromCeFunc(ce *ast.CallExpr, ssaPkg *ssa.Package, info *types.Info) *ssa.Function {
+	var funcObj types.Object
+	var x ast.Expr
+
+	switch fun := ce.Fun.(type) {
+	case *ast.Ident:
+		funcObj = info.ObjectOf(fun)
+	case *ast.SelectorExpr:
+		funcObj = info.ObjectOf(fun.Sel)
+		x = fun.X
+	default:
+		return nil
+	}
+
+	if funcObj == nil {
+		return nil
+	}
+
+	for _, member := range ssaPkg.Members {
+		if ssaFunc, ok := member.(*ssa.Function); ok {
+			if ssaFunc.Object() == funcObj {
+				return ssaFunc
+			}
+		}
+	}
+
+	idt, ok := x.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+
+	funcObj = info.ObjectOf(idt)
+
+	for _, member := range ssaPkg.Members {
+		if ssaFunc, ok := member.(*ssa.Function); ok {
+			if ssaFunc.Object() == funcObj {
+				return ssaFunc
+			}
+		}
+	}
+
+	return nil
 }
 
 func (n *Navigator) SSAPkgFromTypesPackage(pkg *types.Package) *ssa.Package {

@@ -28,6 +28,7 @@ type SSAContext struct {
 	EnclosedByFunc *ssa.Function
 	Edges          []*callgraph.Edge
 	CallPaths      *CallPaths
+	SSAFunc        *ssa.Function
 }
 
 type CallPaths struct {
