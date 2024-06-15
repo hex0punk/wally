@@ -139,7 +139,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 	pathLimited := false
 	for queue.Len() > 0 {
-		// we process the first node - on first iteration, it'd be [Normalize] cogs/cogs.go:156:19 --->
+		// we process the first node
 		bfsNodeElm := queue.Front()
 		// We remove last elm so we can put it in the front after updating it with new paths
 		queue.Remove(bfsNodeElm)
