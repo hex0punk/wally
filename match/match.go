@@ -28,6 +28,9 @@ type SSAContext struct {
 	EnclosedByFunc *ssa.Function
 	Edges          []*callgraph.Edge
 	CallPaths      *CallPaths
+	SSAInstruction ssa.CallInstruction
+	SSAFunc        *ssa.Function
+	TargetPos      string
 }
 
 type CallPaths struct {
@@ -42,7 +45,15 @@ type CallPath struct {
 	Recoverable   bool
 }
 
+type NodeType int
+
+const (
+	Site NodeType = iota
+	Function
+)
+
 type Node struct {
+	NodeType   NodeType
 	NodeString string
 	Pkg        *ssa.Package
 	Func       *ssa.Function
@@ -103,6 +114,7 @@ func (r *RouteMatch) MarshalJSON() ([]byte, error) {
 		for x := len(paths.Nodes) - 1; x >= 0; x-- {
 			p = append(p, paths.Nodes[x].NodeString)
 		}
+		p = append(p, r.SSA.TargetPos)
 		resPaths = append(resPaths, p)
 	}
 

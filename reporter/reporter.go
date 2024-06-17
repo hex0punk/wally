@@ -69,6 +69,7 @@ func PrintMach(match match.RouteMatch) {
 			for x := len(paths.Nodes) - 1; x >= 0; x-- {
 				fmt.Printf("		%s --->\n", paths.Nodes[x].NodeString)
 			}
+			fmt.Printf("			%s\n", match.SSA.TargetPos)
 		}
 	}
 	fmt.Println()

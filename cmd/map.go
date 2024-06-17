@@ -49,7 +49,7 @@ var mapCmd = &cobra.Command{
 			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s\n", searchAlg)
 		}
 
-		if callgraphAlg != "rta" && callgraphAlg != "cha" && callgraphAlg != "vta" {
+		if callgraphAlg != "rta" && callgraphAlg != "cha" && callgraphAlg != "vta" && callgraphAlg != "static" {
 			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
 		}
 

@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/callgraph/rta"
+	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/callgraph/vta"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -87,6 +88,8 @@ func (n *Navigator) MapRoutes(paths []string) {
 
 		n.Logger.Info("Generating SSA based callgraph", "alg", n.CallgraphAlg)
 		switch n.CallgraphAlg {
+		case "static":
+			n.SSA.Callgraph = static.CallGraph(prog)
 		case "cha":
 			n.SSA.Callgraph = cha.CallGraph(prog)
 		case "rta":
@@ -102,8 +105,6 @@ func (n *Navigator) MapRoutes(paths []string) {
 		default:
 			log.Fatalf("Unknown callgraph alg %s", n.CallgraphAlg)
 		}
-		n.SSA.Callgraph = cha.CallGraph(prog)
-
 	}
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
@@ -245,9 +246,14 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		if n.RunSSA {
 			ssapkg := n.SSAPkgFromTypesPackage(pass.Pkg)
 			if ssapkg != nil {
-				if ssaFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaFunc != nil {
-					match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaFunc.Name())
-					match.SSA.EnclosedByFunc = ssaFunc
+				if ssaEnclosingFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaEnclosingFunc != nil {
+					match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
+					match.SSA.EnclosedByFunc = ssaEnclosingFunc
+
+					match.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce, pass.TypesInfo, pass)
+					if match.SSA.SSAInstruction != nil {
+						match.SSA.SSAFunc = n.GetFunctionFromCallInstruction(match.SSA.SSAInstruction)
+					}
 				}
 			}
 		} else {
@@ -260,6 +266,65 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	})
 
 	return results, nil
+}
+
+func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, expr *ast.CallExpr, info *types.Info, pass *analysis.Pass) ssa.CallInstruction {
+	obj := GetObjFromCe(expr, info)
+	if obj == nil {
+		return nil
+	}
+
+	for _, block := range enclosingFunc.Blocks {
+		for _, instr := range block.Instrs {
+			if call, ok := instr.(ssa.CallInstruction); ok {
+				if n.isMatchingCall(call, obj, expr) {
+					return call
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (n *Navigator) isMatchingCall(call ssa.CallInstruction, obj types.Object, expr *ast.CallExpr) bool {
+	var cp token.Pos
+	if call.Value() == nil {
+		cp = call.Common().Value.Pos()
+	} else {
+		cp = call.Value().Call.Value.Pos()
+	}
+
+	// Check with Lparem works for non-static calls
+	if cp == obj.Pos() || call.Pos() == expr.Lparen {
+		return true
+	}
+	return false
+}
+
+func (n *Navigator) GetCalledFunctionUsingEnclosing(enclosingFunc *ssa.Function, ce *ast.CallExpr, ssaPkg *ssa.Package) *ssa.Function {
+	for _, block := range enclosingFunc.Blocks {
+		for _, instr := range block.Instrs {
+			if call, ok := instr.(*ssa.Call); ok {
+				if call.Call.Pos() == ce.Pos() {
+					if callee := call.Call.StaticCallee(); callee != nil {
+						return callee
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (n *Navigator) GetFunctionFromCallInstruction(callInstr ssa.CallInstruction) *ssa.Function {
+	callCommon := callInstr.Common()
+	if callCommon == nil {
+		return nil
+	}
+
+	return callCommon.StaticCallee()
 }
 
 func (n *Navigator) SSAPkgFromTypesPackage(pkg *types.Package) *ssa.Package {
@@ -309,7 +374,6 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	}
 }
 
-// TODO: TEMP - test this but with a parm for other types such as assighmentStmt, etc
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
 	for _, spec := range gen.Specs {
 		s, ok := spec.(*ast.ValueSpec)
@@ -368,6 +432,21 @@ func (n *Navigator) RecordLocals(gen *ast.AssignStmt, pass *analysis.Pass) {
 			pass.ExportObjectFact(o1, gv)
 		}
 	}
+}
+
+func GetObjFromCe(ce *ast.CallExpr, info *types.Info) types.Object {
+	var funcObj types.Object
+
+	switch fun := ce.Fun.(type) {
+	case *ast.Ident:
+		funcObj = info.ObjectOf(fun)
+	case *ast.SelectorExpr:
+		funcObj = info.ObjectOf(fun.Sel)
+	default:
+		return nil
+	}
+
+	return funcObj
 }
 
 func GetEnclosingFuncWithSSA(pass *analysis.Pass, ce *ast.CallExpr, ssaPkg *ssa.Package) *ssa.Function {
