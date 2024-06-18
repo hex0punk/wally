@@ -205,7 +205,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				continue
 			}
 			if options.Filter == "" || passesFilter(e.Caller, options.Filter) {
-				if options.Limiter > None && mainPkgLimited(currentNode, e, options) {
+				if mainPkgLimited(currentNode, e, options) {
 					allAlreadyInPath = false
 					continue
 				}
@@ -256,9 +256,9 @@ func isMainFunc(node *callgraph.Node) bool {
 
 // Used to help wrangle some of the unrealistic resutls from cha.Callgraph
 func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Options) bool {
-	if options.Limiter == None {
-		return false
-	}
+	//if options.ContinueAfterMain {
+	//	return false
+	//}
 
 	currentPkg := currentNode.Func.Package().Pkg
 	callerPkg := e.Caller.Func.Package().Pkg
@@ -268,18 +268,36 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	}
 
 	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
-	isNonMainPkg := callerPkg.Name() != "main"
-	isNonMainCallerOrClosure := isNonMainPkg && !strings.Contains(currentNode.Func.Name(), "$")
+	isNonMainCallerOrClosure := callerPkg.Name() != "main" && !strings.Contains(currentNode.Func.Name(), "$")
 
-	if options.Limiter == Normal {
-		return isDifferentMainPkg || isNonMainCallerOrClosure
-	}
-
-	if options.Limiter == Strict {
-		return isDifferentMainPkg || isNonMainPkg
-	}
-	return false
+	return isDifferentMainPkg || isNonMainCallerOrClosure
 }
+
+//func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Options) bool {
+//	if options.Limiter == None {
+//		return false
+//	}
+//
+//	currentPkg := currentNode.Func.Package().Pkg
+//	callerPkg := e.Caller.Func.Package().Pkg
+//
+//	if currentPkg.Name() != "main" {
+//		return false
+//	}
+//
+//	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
+//	isNonMainPkg := callerPkg.Name() != "main"
+//	isNonMainCallerOrClosure := isNonMainPkg && !strings.Contains(currentNode.Func.Name(), "$")
+//
+//	if options.Limiter == Normal {
+//		return isDifferentMainPkg || isNonMainCallerOrClosure
+//	}
+//
+//	if options.Limiter == Strict {
+//		return isDifferentMainPkg || isNonMainPkg
+//	}
+//	return false
+//}
 
 func shouldSkipNode(e *callgraph.Edge, options Options) bool {
 	if options.Filter != "" && e.Caller != nil && !passesFilter(e.Caller, options.Filter) {
