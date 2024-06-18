@@ -112,7 +112,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
 	newPath := appendNodeToPath(destination, path, options, site)
-	if options.Limiter > None && isMainFunc(destination) {
+	if options.Limiter > None && isMainFunc(destination, options) {
 		paths.InsertPaths(newPath, false, false)
 		cm.Stop = false
 		return
@@ -185,7 +185,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 		//fmt.Println("looking at ", currentPath)
 
-		if options.Limiter > None && isMainFunc(currentNode) {
+		if options.Limiter != None && isMainFunc(currentNode, options) {
 			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
@@ -228,7 +228,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				}
 			}
 		}
-		if options.Limiter > None && allOutsideMainPkg && !allAlreadyInPath {
+		if allOutsideMainPkg && !allAlreadyInPath {
 			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
@@ -250,8 +250,8 @@ func limitFuncsReached(path []string, options Options) bool {
 	return options.MaxFuncs > 0 && len(path) >= options.MaxFuncs
 }
 
-func isMainFunc(node *callgraph.Node) bool {
-	return (node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$"))
+func isMainFunc(node *callgraph.Node, options Options) bool {
+	return (node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$")) && options.Limiter != None
 }
 
 // Used to help wrangle some of the unrealistic resutls from cha.Callgraph
