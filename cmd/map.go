@@ -18,20 +18,20 @@ var (
 	config      string
 	wallyConfig WallyConfig
 
-	paths             []string
-	runSSA            bool
-	filter            string
-	graph             string
-	maxFuncs          int
-	maxPaths          int
-	printNodes        bool
-	format            string
-	outputFile        string
-	serverGraph       bool
-	skipDefault       bool
-	continueAfterMain bool
-	searchAlg         string
-	callgraphAlg      string
+	paths        []string
+	runSSA       bool
+	filter       string
+	graph        string
+	maxFuncs     int
+	maxPaths     int
+	printNodes   bool
+	format       string
+	outputFile   string
+	serverGraph  bool
+	skipDefault  bool
+	limiterMode  string
+	searchAlg    string
+	callgraphAlg string
 )
 
 // mapCmd represents the map command
@@ -53,6 +53,11 @@ var mapCmd = &cobra.Command{
 			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
 		}
 
+		limiterMode = strings.ToLower(limiterMode)
+		if limiterMode != "none" && limiterMode != "normal" && limiterMode != "strict" {
+			return fmt.Errorf("limiter-mode should be either none, normal, or strict, got %s\n", limiterMode)
+		}
+
 		return nil
 	},
 	Run: mapRoutes,
@@ -62,7 +67,7 @@ func init() {
 	rootCmd.AddCommand(mapCmd)
 
 	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
-	mapCmd.PersistentFlags().BoolVar(&continueAfterMain, "continue-after-main", false, "continue callpath search even after reaching main")
+	mapCmd.PersistentFlags().StringVar(&limiterMode, "limiter-mode", "normal", "Logic to limit callgraph algorithm sporious nodes")
 	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 	mapCmd.PersistentFlags().StringVar(&callgraphAlg, "callgraph-alg", "cha", "cha || rta || vta")
 
@@ -93,12 +98,12 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	nav.MapRoutes(paths)
 	if runSSA {
 		mapperOptions := callmapper.Options{
-			Filter:            filter,
-			MaxFuncs:          maxFuncs,
-			MaxPaths:          maxPaths,
-			PrintNodes:        printNodes,
-			SearchAlg:         callmapper.SearchAlgs[searchAlg],
-			ContinueAfterMain: continueAfterMain,
+			Filter:     filter,
+			MaxFuncs:   maxFuncs,
+			MaxPaths:   maxPaths,
+			PrintNodes: printNodes,
+			SearchAlg:  callmapper.SearchAlgs[searchAlg],
+			Limiter:    callmapper.LimiterModes[limiterMode],
 		}
 		nav.Logger.Info("Solving call paths")
 		nav.SolveCallPaths(mapperOptions)

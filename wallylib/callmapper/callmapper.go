@@ -35,13 +35,30 @@ type BFSNode struct {
 	Path []string
 }
 
+type LimiterMode int
+
+// None = allows analysis to run pass main
+// Normal = filters up to the main function if possible unless. It also filters up to main pkg *unless* the last function before going outside of main is a closure
+// Strict = Does not allow going past the main package
+const (
+	None LimiterMode = iota
+	Normal
+	Strict
+)
+
+var LimiterModes = map[string]LimiterMode{
+	"none":   None,
+	"nomal":  Normal,
+	"strict": Strict,
+}
+
 type Options struct {
-	Filter            string
-	MaxFuncs          int
-	MaxPaths          int
-	ContinueAfterMain bool
-	PrintNodes        bool
-	SearchAlg         SearchAlgorithm
+	Filter     string
+	MaxFuncs   int
+	MaxPaths   int
+	PrintNodes bool
+	SearchAlg  SearchAlgorithm
+	Limiter    LimiterMode
 }
 
 func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
@@ -77,21 +94,6 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 	return initialPath
 }
 
-func getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function) string {
-	baseStr := ""
-	baseStr = fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
-	if function.Recover != nil {
-		rec, err := findDeferRecover(function, function.Recover.Index-1)
-		if err != nil {
-			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-		}
-		if rec {
-			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-		}
-	}
-	return baseStr
-}
-
 func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
 	initialPath := cm.initPath(s)
 	callPaths := &match.CallPaths{}
@@ -110,7 +112,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
 	newPath := appendNodeToPath(destination, path, options, site)
-	if isMainFunc(destination, options) {
+	if options.Limiter > None && isMainFunc(destination) {
 		paths.InsertPaths(newPath, false, false)
 		cm.Stop = false
 		return
@@ -133,6 +135,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	defer delete(visited, destination.ID)
 
 	allOutsideModule := true
+	//allOutsideMain := true
 	for _, e := range destination.In {
 		if paths.Paths != nil && options.MaxPaths > 0 && len(paths.Paths) >= options.MaxPaths {
 			cm.Match.SSA.PathLimited = true
@@ -143,7 +146,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		}
 
 		if !shouldSkipNode(e, options) {
-			if mainPkgLimited(destination, e, options) {
+			if options.Limiter > None && mainPkgLimited(destination, e, options) {
 				continue
 			}
 			allOutsideModule = false
@@ -161,8 +164,13 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	queue := list.New()
 	queue.PushBack(BFSNode{Node: start, Path: initialPath})
 
+	if initialPath[0] == "main.[run] services/webber/main/webber/webber.go:112:6" {
+		fmt.Println()
+	}
+
 	pathLimited := false
 	for queue.Len() > 0 {
+		fmt.Println("==================")
 		//printQueue(queue)
 		// we process the first node
 		bfsNodeElm := queue.Front()
@@ -173,13 +181,17 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		currentNode := current.Node
 		currentPath := current.Path
 
-		if isMainFunc(currentNode, options) {
+		//printQueue(queue)
+
+		//fmt.Println("looking at ", currentPath)
+
+		if options.Limiter > None && isMainFunc(currentNode) {
 			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
 
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
-		if limitFuncsReached(currentNode, currentPath, options) {
+		if limitFuncsReached(currentPath, options) {
 			paths.InsertPaths(currentPath, true, false)
 			continue
 		}
@@ -193,7 +205,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				continue
 			}
 			if options.Filter == "" || passesFilter(e.Caller, options.Filter) {
-				if mainPkgLimited(currentNode, e, options) {
+				if options.Limiter > None && mainPkgLimited(currentNode, e, options) {
 					allAlreadyInPath = false
 					continue
 				}
@@ -207,7 +219,8 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				// We want to process the new node we added to the path.
 				newPathWithCaller := appendNodeToPath(e.Caller, newPathCopy, options, e.Site)
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
-
+				fmt.Println("Added:")
+				//printQueue(queue)
 				// Have we reached the max paths set by the user
 				if options.MaxPaths > 0 && queue.Len()+len(paths.Paths) >= options.MaxPaths {
 					pathLimited = true
@@ -215,12 +228,14 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				}
 			}
 		}
-		if allOutsideMainPkg && !allAlreadyInPath {
+		if options.Limiter > None && allOutsideMainPkg && !allAlreadyInPath {
 			paths.InsertPaths(currentPath, false, false)
+			continue
 		}
-		if allOutsideFilter {
+		if options.Filter != "" && allOutsideFilter && !allAlreadyInPath {
 			paths.InsertPaths(currentPath, false, true)
 		}
+		//printQueue(queue)
 	}
 
 	// Insert whataver is left by now
@@ -231,17 +246,17 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	}
 }
 
-func limitFuncsReached(node *callgraph.Node, path []string, options Options) bool {
+func limitFuncsReached(path []string, options Options) bool {
 	return options.MaxFuncs > 0 && len(path) >= options.MaxFuncs
 }
 
-func isMainFunc(node *callgraph.Node, options Options) bool {
-	return (node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$")) && !options.ContinueAfterMain
+func isMainFunc(node *callgraph.Node) bool {
+	return (node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$"))
 }
 
 // Used to help wrangle some of the unrealistic resutls from cha.Callgraph
 func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Options) bool {
-	if options.ContinueAfterMain {
+	if options.Limiter == None {
 		return false
 	}
 
@@ -253,9 +268,17 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	}
 
 	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
-	isNonMainCallerOrClosure := callerPkg.Name() != "main" && !strings.Contains(currentNode.Func.Name(), "$")
+	isNonMainPkg := callerPkg.Name() != "main"
+	isNonMainCallerOrClosure := isNonMainPkg && !strings.Contains(currentNode.Func.Name(), "$")
 
-	return isDifferentMainPkg || isNonMainCallerOrClosure
+	if options.Limiter == Normal {
+		return isDifferentMainPkg || isNonMainCallerOrClosure
+	}
+
+	if options.Limiter == Strict {
+		return isDifferentMainPkg || isNonMainPkg
+	}
+	return false
 }
 
 func shouldSkipNode(e *callgraph.Edge, options Options) bool {
@@ -292,17 +315,25 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 	}
 
 	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
-	nodeDescription := fmt.Sprintf("%s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), fp)
 
-	if s.Func.Recover != nil {
-		hasRecover, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
+	nodeDescription := getNodeString(fp, s.Func.Pkg, s.Func)
+
+	return append(path, nodeDescription)
+}
+
+func getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function) string {
+	baseStr := ""
+	baseStr = fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
+	if function.Recover != nil {
+		rec, err := findDeferRecover(function, function.Recover.Index-1)
 		if err != nil {
-			nodeDescription = fmt.Sprintf("%s.[%s] (%s) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), err.Error(), fp)
-		} else if hasRecover {
-			nodeDescription = fmt.Sprintf("%s.[%s] (recoverable) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), fp)
+			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
+		}
+		if rec {
+			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
 		}
 	}
-	return append(path, nodeDescription)
+	return baseStr
 }
 
 func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
