@@ -268,7 +268,7 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	}
 
 	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
-	isNonMainPkg := callerPkg.Name() != "main"
+	isNonMainPkg := callerPkg.Name() != "main" && currentPkg.Path() != callerPkg.Path()
 	isNonMainCallerOrClosure := isNonMainPkg && !strings.Contains(currentNode.Func.Name(), "$")
 
 	if options.Limiter == Normal {

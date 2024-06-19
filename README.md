@@ -7,8 +7,8 @@
 Wally is a static analysis tool for mapping function paths in code. It can be used for:
 
 - HTTP and gRPC route detection
-- Attack surface mapping. 
-- Automating the initial stages of threat modeling by mapping RPC and HTTP routes in Go code. 
+- Attack surface mapping.
+- Automating the initial stages of threat modeling by mapping RPC and HTTP routes in Go code.
 - Planning fuzzing efforts by examining the fault tolerance of call paths in code.
 
 ## UI Demo
@@ -47,7 +47,7 @@ Wally currently supports the following features:
 
 #### Mapping routes for security analysis
 
-You are conducting an analysis of a monorepo containing multiple microservices. Often, these sorts of projects rely heavily on gRPC, which generates code for setting up gRPC routes via functions that call [`Invoke`](https://pkg.go.dev/google.golang.org/grpc#Invoke). Other services can then use these functions to call each other. 
+You are conducting an analysis of a monorepo containing multiple microservices. Often, these sorts of projects rely heavily on gRPC, which generates code for setting up gRPC routes via functions that call [`Invoke`](https://pkg.go.dev/google.golang.org/grpc#Invoke). Other services can then use these functions to call each other.
 
 One of the built-in indicators in `wally` will allow it to find functions that call `Invoke` for gRPC routes, so you can get a nice list of all gRPC method calls for all your microservices. Further, with `--ssa` you can also map the chains of methods gRPC calls necessary to reach any given gRPC route. With `wally`, you can then answer:
 
@@ -219,7 +219,7 @@ Possible Paths: 28
 
 ### Filtering call path analysis
 
-When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. In most cases, you'd want to filter analysis to only the module you want to target. For instance, when using wally to find HTTP and gRPC routes in nomad, you'd want to type the command below. 
+When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. In most cases, you'd want to filter analysis to only the module you want to target. For instance, when using wally to find HTTP and gRPC routes in nomad, you'd want to type the command below.
 
 ```shell
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" --max-paths 50
@@ -232,7 +232,7 @@ Where `-f` defines a filter for the call stack search function. If you don't do 
 
 Wally has the following options to limit the search. These options can help refine the results, but can be used for various experimental uses of Wally as well.
 
-- `-f`: filter string which tells wally the path prefix for packages that you are interested in. Typically you'd want to enter the full path for the Go module you are targetting, unless you are interested in paths that may reach to standard Go functions (i.e. `runtime`) via closures, etc. 
+- `-f`: filter string which tells wally the path prefix for packages that you are interested in. Typically you'd want to enter the full path for the Go module you are targetting, unless you are interested in paths that may reach to standard Go functions (i.e. `runtime`) via closures, etc.
 - `max-paths`: maximum number of paths per match which wally will collect. This is helpful when the generate callgraphs report cyclic functions
 - `max-funcs`: maxium number of functions or nodes reported per paths. We recommed you use this if you run wally without a filter using `-f`
 - `limiter-mode`: See explanation below
@@ -242,10 +242,11 @@ Wally has the following options to limit the search. These options can help refi
 At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter` flag, followed by one of the modes below:
 
 - `none`: Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
-- `normal`: This is the default mode. Wally will stop constructing call paths once it sees a call to either:
-  - A function node originating in the `main` _function_), followed by call not in the `main` function belonging to the same package
-  - 
-
+- `normal`: _This is the default mode_. Wally will stop constructing call paths once it sees a call to either:
+    - A function node A originating in the `main` _function_, followed by a call to node B not in the `main` function belonging to the same package
+    - A function node A originating in the `main` _package_ followed by a call to node B inside the `main` function of a different package
+    - A function node A originating in the `main` _pacckage_ followed by a function/node B not in the same package _unless_ function/node A is a closure.
+- `strict`: Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
 
 ### Analyzing individual paths
 
@@ -350,7 +351,7 @@ Clicking on any finding node will populate the section on the left with informat
 
 ### Searching nodes
 
-Start typing on the search bar on the left to find a node by name. 
+Start typing on the search bar on the left to find a node by name.
 
 ### PNG and XDOT Graph output
 
