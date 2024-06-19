@@ -68,7 +68,7 @@ func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
 	}
 }
 
-func (cm *CallMapper) initPath(s *callgraph.Node) []string {
+func (cm *CallMapper) initPath() []string {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
 	encStr := getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc)
@@ -95,7 +95,7 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 }
 
 func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
-	initialPath := cm.initPath(s)
+	initialPath := cm.initPath()
 	callPaths := &match.CallPaths{}
 	cm.BFS(s, initialPath, callPaths, options)
 	return callPaths
@@ -103,7 +103,7 @@ func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.CallPaths {
 	visited := make(map[int]bool)
-	initialPath := cm.initPath(s)
+	initialPath := cm.initPath()
 	callPaths := &match.CallPaths{}
 	callPaths.Paths = []*match.CallPath{}
 	cm.DFS(s, visited, initialPath, callPaths, options, nil)
@@ -112,7 +112,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
 	newPath := appendNodeToPath(destination, path, options, site)
-	if options.Limiter > None && isMainFunc(destination, options) {
+	if options.Limiter > 0 && isMainFunc(destination) {
 		paths.InsertPaths(newPath, false, false)
 		cm.Stop = false
 		return
@@ -134,8 +134,9 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 
 	defer delete(visited, destination.ID)
 
+	cm.Stop = false
 	allOutsideModule := true
-	//allOutsideMain := true
+	allOutsideMainPkg := true
 	for _, e := range destination.In {
 		if paths.Paths != nil && options.MaxPaths > 0 && len(paths.Paths) >= options.MaxPaths {
 			cm.Match.SSA.PathLimited = true
@@ -146,9 +147,10 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		}
 
 		if !shouldSkipNode(e, options) {
-			if options.Limiter > None && mainPkgLimited(destination, e, options) {
+			if mainPkgLimited(destination, e, options) {
 				continue
 			}
+			allOutsideMainPkg = false
 			allOutsideModule = false
 			cm.DFS(e.Caller, visited, newPath, paths, options, e.Site)
 		}
@@ -158,19 +160,19 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		// This should be handled diffirently and not abuse CallMapper struct
 		cm.Stop = true
 	}
+	if allOutsideMainPkg {
+		paths.InsertPaths(newPath, mustStop, cm.Stop)
+		cm.Stop = false
+		return
+	}
 }
 
 func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *match.CallPaths, options Options) {
 	queue := list.New()
 	queue.PushBack(BFSNode{Node: start, Path: initialPath})
 
-	if initialPath[0] == "main.[run] services/webber/main/webber/webber.go:112:6" {
-		fmt.Println()
-	}
-
 	pathLimited := false
 	for queue.Len() > 0 {
-		fmt.Println("==================")
 		//printQueue(queue)
 		// we process the first node
 		bfsNodeElm := queue.Front()
@@ -181,11 +183,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		currentNode := current.Node
 		currentPath := current.Path
 
-		//printQueue(queue)
-
-		//fmt.Println("looking at ", currentPath)
-
-		if options.Limiter != None && isMainFunc(currentNode, options) {
+		if options.Limiter > None && isMainFunc(currentNode) {
 			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
@@ -219,8 +217,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				// We want to process the new node we added to the path.
 				newPathWithCaller := appendNodeToPath(e.Caller, newPathCopy, options, e.Site)
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
-				fmt.Println("Added:")
-				//printQueue(queue)
+
 				// Have we reached the max paths set by the user
 				if options.MaxPaths > 0 && queue.Len()+len(paths.Paths) >= options.MaxPaths {
 					pathLimited = true
@@ -232,10 +229,13 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
-		if options.Filter != "" && allOutsideFilter && !allAlreadyInPath {
+		if options.Filter != "" && allOutsideFilter {
 			paths.InsertPaths(currentPath, false, true)
+			continue
 		}
-		//printQueue(queue)
+		if allAlreadyInPath {
+			paths.InsertPaths(currentPath, false, false)
+		}
 	}
 
 	// Insert whataver is left by now
@@ -250,8 +250,8 @@ func limitFuncsReached(path []string, options Options) bool {
 	return options.MaxFuncs > 0 && len(path) >= options.MaxFuncs
 }
 
-func isMainFunc(node *callgraph.Node, options Options) bool {
-	return (node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$")) && options.Limiter != None
+func isMainFunc(node *callgraph.Node) bool {
+	return node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$")
 }
 
 // Used to help wrangle some of the unrealistic resutls from cha.Callgraph
@@ -268,7 +268,7 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	}
 
 	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
-	isNonMainPkg := callerPkg.Name() != "main"
+	isNonMainPkg := callerPkg.Name() != "main" && currentPkg.Path() != callerPkg.Path()
 	isNonMainCallerOrClosure := isNonMainPkg && !strings.Contains(currentNode.Func.Name(), "$")
 
 	if options.Limiter == Normal {
@@ -376,7 +376,7 @@ func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool,
 				if closureFn, ok := it.Fn.(*ssa.Function); ok {
 					res, err := findDeferRecoverRecursive(closureFn, visited, 0)
 					if err != nil {
-						return false, errors.New("Unexpected error finding recover block")
+						return false, errors.New("unexpected error finding recover block")
 					}
 					if res {
 						return true, nil
