@@ -35,13 +35,30 @@ type BFSNode struct {
 	Path []string
 }
 
+type LimiterMode int
+
+// None = allows analysis to run pass main
+// Normal = filters up to the main function if possible unless. It also filters up to main pkg *unless* the last function before going outside of main is a closure
+// Strict = Does not allow going past the main package
+const (
+	None LimiterMode = iota
+	Normal
+	Strict
+)
+
+var LimiterModes = map[string]LimiterMode{
+	"none":   None,
+	"normal": Normal,
+	"strict": Strict,
+}
+
 type Options struct {
-	Filter            string
-	MaxFuncs          int
-	MaxPaths          int
-	ContinueAfterMain bool
-	PrintNodes        bool
-	SearchAlg         SearchAlgorithm
+	Filter     string
+	MaxFuncs   int
+	MaxPaths   int
+	PrintNodes bool
+	SearchAlg  SearchAlgorithm
+	Limiter    LimiterMode
 }
 
 func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
@@ -51,7 +68,7 @@ func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
 	}
 }
 
-func (cm *CallMapper) initPath(s *callgraph.Node) []string {
+func (cm *CallMapper) initPath() []string {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
 	encStr := getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc)
@@ -77,23 +94,8 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 	return initialPath
 }
 
-func getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function) string {
-	baseStr := ""
-	baseStr = fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
-	if function.Recover != nil {
-		rec, err := findDeferRecover(function, function.Recover.Index-1)
-		if err != nil {
-			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-		}
-		if rec {
-			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-		}
-	}
-	return baseStr
-}
-
 func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
-	initialPath := cm.initPath(s)
+	initialPath := cm.initPath()
 	callPaths := &match.CallPaths{}
 	cm.BFS(s, initialPath, callPaths, options)
 	return callPaths
@@ -101,7 +103,7 @@ func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.CallPaths {
 	visited := make(map[int]bool)
-	initialPath := cm.initPath(s)
+	initialPath := cm.initPath()
 	callPaths := &match.CallPaths{}
 	callPaths.Paths = []*match.CallPath{}
 	cm.DFS(s, visited, initialPath, callPaths, options, nil)
@@ -110,7 +112,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
 	newPath := appendNodeToPath(destination, path, options, site)
-	if isMainFunc(destination, options) {
+	if options.Limiter > 0 && isMainFunc(destination) {
 		paths.InsertPaths(newPath, false, false)
 		cm.Stop = false
 		return
@@ -132,7 +134,9 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 
 	defer delete(visited, destination.ID)
 
+	cm.Stop = false
 	allOutsideModule := true
+	allOutsideMainPkg := true
 	for _, e := range destination.In {
 		if paths.Paths != nil && options.MaxPaths > 0 && len(paths.Paths) >= options.MaxPaths {
 			cm.Match.SSA.PathLimited = true
@@ -146,6 +150,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 			if mainPkgLimited(destination, e, options) {
 				continue
 			}
+			allOutsideMainPkg = false
 			allOutsideModule = false
 			cm.DFS(e.Caller, visited, newPath, paths, options, e.Site)
 		}
@@ -154,6 +159,11 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		// TODO: This is a quick and dirty solution to marking a path as going outside the module
 		// This should be handled diffirently and not abuse CallMapper struct
 		cm.Stop = true
+	}
+	if allOutsideMainPkg {
+		paths.InsertPaths(newPath, mustStop, cm.Stop)
+		cm.Stop = false
+		return
 	}
 }
 
@@ -173,13 +183,13 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		currentNode := current.Node
 		currentPath := current.Path
 
-		if isMainFunc(currentNode, options) {
+		if options.Limiter > None && isMainFunc(currentNode) {
 			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
 
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
-		if limitFuncsReached(currentNode, currentPath, options) {
+		if limitFuncsReached(currentPath, options) {
 			paths.InsertPaths(currentPath, true, false)
 			continue
 		}
@@ -217,9 +227,14 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		}
 		if allOutsideMainPkg && !allAlreadyInPath {
 			paths.InsertPaths(currentPath, false, false)
+			continue
 		}
-		if allOutsideFilter {
+		if options.Filter != "" && allOutsideFilter {
 			paths.InsertPaths(currentPath, false, true)
+			continue
+		}
+		if allAlreadyInPath {
+			paths.InsertPaths(currentPath, false, false)
 		}
 	}
 
@@ -231,17 +246,17 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	}
 }
 
-func limitFuncsReached(node *callgraph.Node, path []string, options Options) bool {
+func limitFuncsReached(path []string, options Options) bool {
 	return options.MaxFuncs > 0 && len(path) >= options.MaxFuncs
 }
 
-func isMainFunc(node *callgraph.Node, options Options) bool {
-	return (node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$")) && !options.ContinueAfterMain
+func isMainFunc(node *callgraph.Node) bool {
+	return node.Func.Name() == "main" || strings.HasPrefix(node.Func.Name(), "main$")
 }
 
 // Used to help wrangle some of the unrealistic resutls from cha.Callgraph
 func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Options) bool {
-	if options.ContinueAfterMain {
+	if options.Limiter == None {
 		return false
 	}
 
@@ -253,9 +268,17 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	}
 
 	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
-	isNonMainCallerOrClosure := callerPkg.Name() != "main" && !strings.Contains(currentNode.Func.Name(), "$")
+	isNonMainPkg := callerPkg.Name() != "main" && currentPkg.Path() != callerPkg.Path()
+	isNonMainCallerOrClosure := isNonMainPkg && !strings.Contains(currentNode.Func.Name(), "$")
 
-	return isDifferentMainPkg || isNonMainCallerOrClosure
+	if options.Limiter == Normal {
+		return isDifferentMainPkg || isNonMainCallerOrClosure
+	}
+
+	if options.Limiter == Strict {
+		return isDifferentMainPkg || isNonMainPkg
+	}
+	return false
 }
 
 func shouldSkipNode(e *callgraph.Edge, options Options) bool {
@@ -292,17 +315,25 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 	}
 
 	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
-	nodeDescription := fmt.Sprintf("%s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), fp)
 
-	if s.Func.Recover != nil {
-		hasRecover, err := findDeferRecover(s.Func, s.Func.Recover.Index-1)
+	nodeDescription := getNodeString(fp, s.Func.Pkg, s.Func)
+
+	return append(path, nodeDescription)
+}
+
+func getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function) string {
+	baseStr := ""
+	baseStr = fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
+	if function.Recover != nil {
+		rec, err := findDeferRecover(function, function.Recover.Index-1)
 		if err != nil {
-			nodeDescription = fmt.Sprintf("%s.[%s] (%s) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), err.Error(), fp)
-		} else if hasRecover {
-			nodeDescription = fmt.Sprintf("%s.[%s] (recoverable) %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), fp)
+			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
+		}
+		if rec {
+			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
 		}
 	}
-	return append(path, nodeDescription)
+	return baseStr
 }
 
 func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
@@ -345,7 +376,7 @@ func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool,
 				if closureFn, ok := it.Fn.(*ssa.Function); ok {
 					res, err := findDeferRecoverRecursive(closureFn, visited, 0)
 					if err != nil {
-						return false, errors.New("Unexpected error finding recover block")
+						return false, errors.New("unexpected error finding recover block")
 					}
 					if res {
 						return true, nil

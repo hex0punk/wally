@@ -7,8 +7,8 @@
 Wally is a static analysis tool for mapping function paths in code. It can be used for:
 
 - HTTP and gRPC route detection
-- Attack surface mapping. 
-- Automating the initial stages of threat modeling by mapping RPC and HTTP routes in Go code. 
+- Attack surface mapping.
+- Automating the initial stages of threat modeling by mapping RPC and HTTP routes in Go code.
 - Planning fuzzing efforts by examining the fault tolerance of call paths in code.
 
 ## UI Demo
@@ -43,9 +43,11 @@ Wally currently supports the following features:
 - Wally will output a nice PNG graph of the call stacks for the different routes it finds.
 - Determine which callpaths in code are tolerant to panics or application crashes due to bugs like nil dereferences
 
-### Use case example
+### Use cases - example
 
-You are conducting an analysis of a monorepo containing multiple microservices. Often, these sorts of projects rely heavily on gRPC, which generates code for setting up gRPC routes via functions that call [`Invoke`](https://pkg.go.dev/google.golang.org/grpc#Invoke). Other services can then use these functions to call each other. 
+#### Mapping routes for security analysis
+
+You are conducting an analysis of a monorepo containing multiple microservices. Often, these sorts of projects rely heavily on gRPC, which generates code for setting up gRPC routes via functions that call [`Invoke`](https://pkg.go.dev/google.golang.org/grpc#Invoke). Other services can then use these functions to call each other.
 
 One of the built-in indicators in `wally` will allow it to find functions that call `Invoke` for gRPC routes, so you can get a nice list of all gRPC method calls for all your microservices. Further, with `--ssa` you can also map the chains of methods gRPC calls necessary to reach any given gRPC route. With `wally`, you can then answer:
 
@@ -53,9 +55,22 @@ One of the built-in indicators in `wally` will allow it to find functions that c
 - Which service would I have to initialize a call to send user input to service `X`?
 - What functions are there between service `A` and service `Y` that might sanitize or modify the input set to service `A`?
 
+#### Planning fuzzing efforts by examining call path tolerance
+
+Say you are evaluating some microservices code in a monorepo and found several functions that seemed like good fuzzing targets due to their complexity and the type of data they handle. However, before fuzzing just for fuzzing’s sake, you want to answer the following:
+
+- What are the different ways in which this function can be reached?
+- For instance, can it only be reached via a gRPC or HTTP call that eventually lands at the target function, or is there some other process (say, a task run daily by a different process) that can call it with user input (e.g., pulled from a user database) via a different call path?
+- If I find a panic here, how much would it matter? That is, would this be recovered by a function in the call path with a recover() in a defer block?
+
+To learn how to answer the above questions, jump to the section on [using wally to detect fault tolerance of call paths](##Using-Wally-in-Fuzzing-Efforts-to-Determine-Fault-Tolerance-of-Call-Paths)
+
 ## Wally configurations
 
 Wally needs a bit of hand-holding. Though it can also do a pretty good job at guessing paths, it helps a lot if you tell it the packages and functions to look for, along with the parameters that you are hoping to discover and map. So, to help Wally do the job, you can specify a configuration file in YAML that defines a set of indicators.
+
+> [!TIP]
+> If you are just interested in use cases of a single function, you can run Wally on [single function search mode](###Analyzing-individual-paths)
 
 Wally runs a number of `indicators` which are basically clues as to whether a function in code may be related to a gRPC or HTTP route. By default, `wally` has a number of built-in `indicators` which check for common ways to set up and call HTTP and RPC methods using standard and popular libraries. However, sometimes a codebase may have custom methods for setting up HTTP routes or for calling HTTP and RPC services. For instance, when reviewing Nomad, you can give Wally the following configuration file with Nomad-specific indicators:
 
@@ -204,8 +219,7 @@ Possible Paths: 28
 
 ### Filtering call path analysis
 
-> [!TIP]
-> When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. In most cases, you'd want to filter analysis to only the module you want to target. For instance, when using wally to find HTTP and gRPC routes in nomad, you'd want to type the command below. 
+When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. In most cases, you'd want to filter analysis to only the module you want to target. For instance, when using wally to find HTTP and gRPC routes in nomad, you'd want to type the command below.
 
 ```shell
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" --max-paths 50
@@ -215,6 +229,24 @@ Where `-f` defines a filter for the call stack search function. If you don't do 
 
 > [!IMPORTANT]
 > If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `--max-paths` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `--max-paths`, `--max-funcs`, `-f`, or all three to get the results you need or expect.
+
+Wally has the following options to limit the search. These options can help refine the results, but can be used for various experimental uses of Wally as well.
+
+- `-f`: filter string which tells wally the path prefix for packages that you are interested in. Typically you'd want to enter the full path for the Go module you are targetting, unless you are interested in paths that may reach to standard Go functions (i.e. `runtime`) via closures, etc.
+- `max-paths`: maximum number of paths per match which wally will collect. This is helpful when the generate callgraphs report cyclic functions
+- `max-funcs`: maxium number of functions or nodes reported per paths. We recommed you use this if you run wally without a filter using `-f`
+- `limiter-mode`: See explanation below
+
+#### Limiter modes
+
+At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter` flag, followed by one of the modes below:
+
+- `none`: Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
+- `normal`: _This is the default mode_. Wally will stop constructing call paths once it sees a call to either:
+    - A function node A originating in the `main` _function_, followed by a call to node B not in the `main` function belonging to the same package
+    - A function node A originating in the `main` _package_ followed by a call to node B inside the `main` function of a different package
+    - A function node A originating in the `main` _pacckage_ followed by a function/node B not in the same package _unless_ function/node A is a closure.
+- `strict`: Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
 
 ### Analyzing individual paths
 
@@ -237,7 +269,45 @@ The options above map to the following
 
 Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found [here](https://hex0punk.com/posts/fault-tolerance-detection-with-wally/).
 
-### Visualizing paths with wally
+Using the [single function search mode](###Analyzing-individual-paths), we can determine which call paths to a given target function would recover in response to a panic
+
+```shell
+$ wally map search  -p ./... --func PrintOrPanic --pkg github.com/hex0punk/wally/sampleapp/printer -f github.com/hex0punk/wally/sampleapp -vvv
+
+===========MATCH===============
+ID:  f9241d61-d19e-4847-b458-4f53a86ed5c5
+Indicator ID:  1
+Package:  github.com/hex0punk/wally/samppleapp/printer
+Function:  PrintOrPanic
+Params:
+Enclosed by:  github.com/hex0punk/wally/samppleapp.printCharSafe$1
+Position /Users/alexuseche/Projects/wally/sampleapp/main.go:17
+Possible Paths: 1
+	Path 1 (RECOVERABLE):
+		main.[main] main.go:11:15 --->
+		main.[`printCharSafe`] main.go:16:16 --->
+		safe.[RunSafely] (recoverable) safe/safe.go:12:4 --->
+		main.[printCharSafe$1] main.go:16:17 --->
+
+===========MATCH===============
+ID:  eb72e837-31ba-4945-97b1-9432900ae3f9
+Indicator ID:  1
+Package:  github.com/hex0punk/wally/samppleapp/printer
+Function:  PrintOrPanic
+Params:
+Enclosed by:  github.com/hex0punk/wally/samppleapp.printChar
+Position /Users/alexuseche/Projects/wally/sampleapp/main.go:22
+Possible Paths: 1
+	Path 1:
+		main.[main] main.go:12:11 --->
+		main.[printChar] main.go:21:6 --->
+
+Total Results:  2
+```
+
+Paths marked with `(RECOVERABLE)` will be fault tolerant. The function containing the `recover()` block is marked in the results as `(recoverable)`
+
+## Visualizing paths with wally
 
 To make visualization of callpaths easier, wally can lunch a server on localhost when via a couple methods:
 
@@ -281,7 +351,7 @@ Clicking on any finding node will populate the section on the left with informat
 
 ### Searching nodes
 
-Start typing on the search bar on the left to find a node by name. 
+Start typing on the search bar on the left to find a node by name.
 
 ### PNG and XDOT Graph output
 

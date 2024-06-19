@@ -115,13 +115,13 @@ func (n *Navigator) MapRoutes(paths []string) {
 		Requires: []*analysis.Analyzer{inspect.Analyzer, ctrlflow.Analyzer, callermapper.Analyzer, tokenfile.Analyzer},
 	}
 
-	checker := checker.InitChecker(analyzer)
+	wallyChecker := checker.InitChecker(analyzer)
 	// TODO: consider this as part of a checker instead
 	results := map[*analysis.Analyzer]interface{}{}
 	for _, pkg := range pkgs {
 		pkg := pkg
 		pass := &analysis.Pass{
-			Analyzer:          checker.Analyzer,
+			Analyzer:          wallyChecker.Analyzer,
 			Fset:              pkg.Fset,
 			Files:             pkg.Syntax,
 			OtherFiles:        pkg.OtherFiles,
@@ -131,8 +131,8 @@ func (n *Navigator) MapRoutes(paths []string) {
 			TypesSizes:        pkg.TypesSizes,
 			ResultOf:          results,
 			Report:            func(d analysis.Diagnostic) {},
-			ImportObjectFact:  checker.ImportObjectFact,
-			ExportObjectFact:  checker.ExportObjectFact,
+			ImportObjectFact:  wallyChecker.ImportObjectFact,
+			ExportObjectFact:  wallyChecker.ExportObjectFact,
 			ImportPackageFact: nil,
 			ExportPackageFact: nil,
 			AllObjectFacts:    nil,
@@ -142,7 +142,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 		for _, a := range analyzer.Requires {
 			res, err := a.Run(pass)
 			if err != nil {
-				n.Logger.Error("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
+				n.Logger.Error("Error running analyzer %s: %s\n", wallyChecker.Analyzer.Name, err)
 				continue
 			}
 			pass.ResultOf[a] = res
@@ -150,7 +150,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 
 		result, err := pass.Analyzer.Run(pass)
 		if err != nil {
-			n.Logger.Error("Error running analyzer %s: %s\n", checker.Analyzer.Name, err)
+			n.Logger.Error("Error running analyzer %s: %s\n", wallyChecker.Analyzer.Name, err)
 			continue
 		}
 		// This should be placed outside of this loop
@@ -196,7 +196,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.DeclStmt)(nil),
 	}
 
-	results := []match.RouteMatch{}
+	var results []match.RouteMatch
 
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
@@ -237,38 +237,38 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		pos := pass.Fset.Position(funExpr.Pos())
 
 		// Whether we are able to get params or not we have a match
-		match := match.NewRouteMatch(*route, pos)
+		funcMatch := match.NewRouteMatch(*route, pos)
 
 		// Now try to get the params for methods, path, etc.
-		match.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
+		funcMatch.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
 
 		//Get the enclosing func
 		if n.RunSSA {
 			ssapkg := n.SSAPkgFromTypesPackage(pass.Pkg)
 			if ssapkg != nil {
 				if ssaEnclosingFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaEnclosingFunc != nil {
-					match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
-					match.SSA.EnclosedByFunc = ssaEnclosingFunc
+					funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
+					funcMatch.SSA.EnclosedByFunc = ssaEnclosingFunc
 
-					match.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce, pass.TypesInfo, pass)
-					if match.SSA.SSAInstruction != nil {
-						match.SSA.SSAFunc = n.GetFunctionFromCallInstruction(match.SSA.SSAInstruction)
+					funcMatch.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce, pass.TypesInfo)
+					if funcMatch.SSA.SSAInstruction != nil {
+						funcMatch.SSA.SSAFunc = n.GetFunctionFromCallInstruction(funcMatch.SSA.SSAInstruction)
 					}
 				}
 			}
 		} else {
 			if decl := callMapper.EnclosingFunc(ce); decl != nil {
-				match.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
+				funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
 			}
 		}
 
-		results = append(results, match)
+		results = append(results, funcMatch)
 	})
 
 	return results, nil
 }
 
-func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, expr *ast.CallExpr, info *types.Info, pass *analysis.Pass) ssa.CallInstruction {
+func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, expr *ast.CallExpr, info *types.Info) ssa.CallInstruction {
 	obj := GetObjFromCe(expr, info)
 	if obj == nil {
 		return nil
@@ -302,7 +302,7 @@ func (n *Navigator) isMatchingCall(call ssa.CallInstruction, obj types.Object, e
 	return false
 }
 
-func (n *Navigator) GetCalledFunctionUsingEnclosing(enclosingFunc *ssa.Function, ce *ast.CallExpr, ssaPkg *ssa.Package) *ssa.Function {
+func (n *Navigator) GetCalledFunctionUsingEnclosing(enclosingFunc *ssa.Function, ce *ast.CallExpr) *ssa.Function {
 	for _, block := range enclosingFunc.Blocks {
 		for _, instr := range block.Instrs {
 			if call, ok := instr.(*ssa.Call); ok {
@@ -342,9 +342,9 @@ func (n *Navigator) SSAPkgFromTypesPackage(pkg *types.Package) *ssa.Package {
 // to any of the matches. At the moment, not used and only prints results for testing
 func (n *Navigator) SolvePathsSlow() {
 	for _, no := range n.SSA.Callgraph.Nodes {
-		for _, match := range n.RouteMatches {
+		for _, routeMatch := range n.RouteMatches {
 			edges := callgraph.PathSearch(no, func(node *callgraph.Node) bool {
-				if node.Func != nil && node.Func == match.SSA.EnclosedByFunc {
+				if node.Func != nil && node.Func == routeMatch.SSA.EnclosedByFunc {
 					return true
 				} else {
 					return false
@@ -358,18 +358,18 @@ func (n *Navigator) SolvePathsSlow() {
 }
 
 func (n *Navigator) SolveCallPaths(options callmapper.Options) {
-	for i, match := range n.RouteMatches {
-		i, match := i, match
-		match.SSA.Edges = n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc].In
-		if match.SSA.Edges == nil {
+	for i, routeMatch := range n.RouteMatches {
+		i, routeMatch := i, routeMatch
+		routeMatch.SSA.Edges = n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc].In
+		if routeMatch.SSA.Edges == nil {
 			// Fail here
 			log.Fatal("Could not get callgraph from SSA. Make sure the target code can build")
 		}
-		cm := callmapper.NewCallMapper(&match, options)
+		cm := callmapper.NewCallMapper(&routeMatch, options)
 		if options.SearchAlg == callmapper.Dfs {
-			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
 		} else {
-			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[match.SSA.EnclosedByFunc], options)
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
 		}
 	}
 }

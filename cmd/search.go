@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
+	"strings"
 	"wally/indicator"
 	"wally/navigator"
 	"wally/reporter"
@@ -21,6 +23,27 @@ var funcCmd = &cobra.Command{
 	Short: "Map a single function",
 	Long:  `Performs analysis given a single function"`,
 	Run:   searchFunc,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if format != "" && format != "json" {
+			return fmt.Errorf("invalid output type: %q\n", format)
+		}
+
+		searchAlg = strings.ToLower(searchAlg)
+		if searchAlg != "bfs" && searchAlg != "dfs" {
+			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s\n", searchAlg)
+		}
+
+		if callgraphAlg != "rta" && callgraphAlg != "cha" && callgraphAlg != "vta" && callgraphAlg != "static" {
+			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
+		}
+
+		limiterMode = strings.ToLower(limiterMode)
+		if limiterMode != "none" && limiterMode != "normal" && limiterMode != "strict" {
+			return fmt.Errorf("limiter-mode should be either none, normal, or strict, got %s\n", limiterMode)
+		}
+
+		return nil
+	},
 }
 
 func init() {
@@ -48,12 +71,12 @@ func searchFunc(cmd *cobra.Command, args []string) {
 	nav.CallgraphAlg = callgraphAlg
 
 	mapperOptions := callmapper.Options{
-		Filter:            filter,
-		MaxFuncs:          maxFuncs,
-		MaxPaths:          maxPaths,
-		PrintNodes:        printNodes,
-		ContinueAfterMain: continueAfterMain,
-		SearchAlg:         callmapper.SearchAlgs[searchAlg],
+		Filter:     filter,
+		MaxFuncs:   maxFuncs,
+		MaxPaths:   maxPaths,
+		PrintNodes: printNodes,
+		Limiter:    callmapper.LimiterModes[limiterMode],
+		SearchAlg:  callmapper.SearchAlgs[searchAlg],
 	}
 
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))
