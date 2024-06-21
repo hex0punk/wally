@@ -369,7 +369,7 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
 		} else {
-			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options, n.SSA.Callgraph.Nodes)
 		}
 	}
 }

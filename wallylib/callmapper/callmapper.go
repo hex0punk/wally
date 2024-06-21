@@ -94,7 +94,10 @@ func (cm *CallMapper) initPath() []string {
 	return initialPath
 }
 
-func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
+var cag map[*ssa.Function]*callgraph.Node
+
+func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options, cg map[*ssa.Function]*callgraph.Node) *match.CallPaths {
+	cag = cg
 	initialPath := cm.initPath()
 	callPaths := &match.CallPaths{}
 	cm.BFS(s, initialPath, callPaths, options)
@@ -196,6 +199,10 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 		newPath := appendNodeToPath(currentNode, currentPath, options, nil)
 
+		if strings.Contains(currentNode.Func.Name(), "$") {
+			encEdges := cag[currentNode.Func.Parent()]
+			currentNode = encEdges
+		}
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
 		for _, e := range currentNode.In {
 			// Do we care about this node, or is it in the path already (if it calls itself)?
