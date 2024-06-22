@@ -145,7 +145,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	allOutsideMainPkg := true
 
 	fnT := destination
-	if options.Limiter >= Strict {
+	if options.Limiter >= Strict || options.SkipClosures {
 		if strings.Contains(destination.Func.Name(), "$") {
 			encEdges := cm.CallgraphNodes[destination.Func.Parent()]
 			fnT = encEdges
@@ -212,7 +212,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 		// If we are not interested in closure call maps (which can often be incorrect) we instead worry about the enclosing
 		// func and not the closure
-		if options.Limiter >= Strict {
+		if options.Limiter >= Strict || options.SkipClosures {
 			if strings.Contains(currentNode.Func.Name(), "$") {
 				encEdges := cm.CallgraphNodes[currentNode.Func.Parent()]
 				currentNode = encEdges
