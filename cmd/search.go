@@ -33,10 +33,6 @@ var funcCmd = &cobra.Command{
 			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s\n", searchAlg)
 		}
 
-		if searchAlg == "dfs" && limiterMode >= 3 || searchAlg == "dfs" && skipClosures {
-			return fmt.Errorf("limiter mode 3 or --skip-closure not supported by DFS")
-		}
-
 		if callgraphAlg != "rta" && callgraphAlg != "cha" && callgraphAlg != "vta" && callgraphAlg != "static" {
 			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
 		}
