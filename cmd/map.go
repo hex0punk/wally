@@ -57,6 +57,7 @@ var mapCmd = &cobra.Command{
 		if limiterMode > 3 {
 			return fmt.Errorf("limiter-mode should be less than 4, got %d\n", limiterMode)
 		}
+
 		return nil
 	},
 	Run: mapRoutes,
