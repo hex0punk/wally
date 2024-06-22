@@ -365,7 +365,8 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 			// Fail here
 			log.Fatal("Could not get callgraph from SSA. Make sure the target code can build")
 		}
-		cm := callmapper.NewCallMapper(&routeMatch, options)
+
+		cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
 		} else {

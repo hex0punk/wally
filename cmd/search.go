@@ -37,11 +37,9 @@ var funcCmd = &cobra.Command{
 			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
 		}
 
-		limiterMode = strings.ToLower(limiterMode)
-		if limiterMode != "none" && limiterMode != "normal" && limiterMode != "strict" {
-			return fmt.Errorf("limiter-mode should be either none, normal, or strict, got %s\n", limiterMode)
+		if limiterMode > 3 {
+			return fmt.Errorf("limiter-mode should be less than 4, got %d\n", limiterMode)
 		}
-
 		return nil
 	},
 }
@@ -71,12 +69,13 @@ func searchFunc(cmd *cobra.Command, args []string) {
 	nav.CallgraphAlg = callgraphAlg
 
 	mapperOptions := callmapper.Options{
-		Filter:     filter,
-		MaxFuncs:   maxFuncs,
-		MaxPaths:   maxPaths,
-		PrintNodes: printNodes,
-		Limiter:    callmapper.LimiterModes[limiterMode],
-		SearchAlg:  callmapper.SearchAlgs[searchAlg],
+		Filter:       filter,
+		MaxFuncs:     maxFuncs,
+		MaxPaths:     maxPaths,
+		PrintNodes:   printNodes,
+		Limiter:      callmapper.LimiterMode(limiterMode),
+		SearchAlg:    callmapper.SearchAlgs[searchAlg],
+		SkipClosures: skipClosures,
 	}
 
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))

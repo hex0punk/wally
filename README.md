@@ -63,14 +63,22 @@ Say you are evaluating some microservices code in a monorepo and found several f
 - For instance, can it only be reached via a gRPC or HTTP call that eventually lands at the target function, or is there some other process (say, a task run daily by a different process) that can call it with user input (e.g., pulled from a user database) via a different call path?
 - If I find a panic here, how much would it matter? That is, would this be recovered by a function in the call path with a recover() in a defer block?
 
+<<<<<<< HEAD
+To learn how to answer the above questions, jump to the section on [using wally to detect fault tolerance of call paths](##Using-Wally-in-Fuzzing-Efforts-to-Determine-Fault-Tolerance-of-Call-Paths)
+=======
 To learn how to answer the above questions, jump to the section on [using wally to detect fault tolerance of call paths](#Using-Wally-in-Fuzzing-Efforts-to-Determine-Fault-Tolerance-of-Call-Paths)
+>>>>>>> main
 
 ## Wally configurations
 
 Wally needs a bit of hand-holding. Though it can also do a pretty good job at guessing paths, it helps a lot if you tell it the packages and functions to look for, along with the parameters that you are hoping to discover and map. So, to help Wally do the job, you can specify a configuration file in YAML that defines a set of indicators.
 
 > [!TIP]
+<<<<<<< HEAD
+> If you are just interested in use cases of a single function, you can run Wally on [single function search mode](###Analyzing-individual-paths)
+=======
 > If you are just interested in use cases of a single function, you can run Wally on [single function search mode](#Analyzing-individual-paths)
+>>>>>>> main
 
 Wally runs a number of `indicators` which are basically clues as to whether a function in code may be related to a gRPC or HTTP route. By default, `wally` has a number of built-in `indicators` which check for common ways to set up and call HTTP and RPC methods using standard and popular libraries. However, sometimes a codebase may have custom methods for setting up HTTP routes or for calling HTTP and RPC services. For instance, when reviewing Nomad, you can give Wally the following configuration file with Nomad-specific indicators:
 
@@ -235,18 +243,20 @@ Wally has the following options to limit the search. These options can help refi
 - `-f`: filter string which tells wally the path prefix for packages that you are interested in. Typically you'd want to enter the full path for the Go module you are targetting, unless you are interested in paths that may reach to standard Go functions (i.e. `runtime`) via closures, etc.
 - `max-paths`: maximum number of paths per match which wally will collect. This is helpful when the generate callgraphs report cyclic functions
 - `max-funcs`: maxium number of functions or nodes reported per paths. We recommed you use this if you run wally without a filter using `-f`
+- `skip-closures`: The default algorithm tries to be complete by returning possible ways in which closures can be used in the program, even if the path is not realistic given the program you are analyzing. This option reduces inaccurate paths by avoiding invalid paths from closures and instead skipping the enclosed function. _Note:_ This option is only supported by the BFS/default search algorithm.
 - `limiter-mode`: See explanation below
 
 #### Limiter modes
 
-At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter` flag, followed by one of the modes below:
+At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter` flag, followed by one of the modes levels below:
 
-- `none`: Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
-- `normal`: _This is the default mode_. Wally will stop constructing call paths once it sees a call to either:
+- `0` (none): Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
+- `1` (normal): _This is the default mode_ and the preferred mode when you are interested in confirming callpath fault tolerance. Wally will stop constructing call paths once it sees a call to either:
     - A function node A originating in the `main` _function_, followed by a call to node B not in the `main` function belonging to the same package
     - A function node A originating in the `main` _package_ followed by a call to node B inside the `main` function of a different package
     - A function node A originating in the `main` _pacckage_ followed by a function/node B not in the same package _unless_ function/node A is a closure.
-- `strict`: Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
+- `2` (high): Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
+- `3` (strict): Same as `skip-closures` plus all the restrictions above. _Note:_ This option is only supported by the BFS/default search algorithm.
 
 ### Analyzing individual paths
 
@@ -269,7 +279,11 @@ The options above map to the following
 
 Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found [here](https://hex0punk.com/posts/fault-tolerance-detection-with-wally/).
 
+<<<<<<< HEAD
+Using the [single function search mode](###Analyzing-individual-paths), we can determine which call paths to a given target function would recover in response to a panic
+=======
 Using the [single function search mode](#Analyzing-individual-paths), we can determine which call paths to a given target function would recover in response to a panic
+>>>>>>> main
 
 ```shell
 $ wally map search  -p ./... --func PrintOrPanic --pkg github.com/hex0punk/wally/sampleapp/printer -f github.com/hex0punk/wally/sampleapp -vvv
