@@ -235,18 +235,20 @@ Wally has the following options to limit the search. These options can help refi
 - `-f`: filter string which tells wally the path prefix for packages that you are interested in. Typically you'd want to enter the full path for the Go module you are targetting, unless you are interested in paths that may reach to standard Go functions (i.e. `runtime`) via closures, etc.
 - `max-paths`: maximum number of paths per match which wally will collect. This is helpful when the generate callgraphs report cyclic functions
 - `max-funcs`: maxium number of functions or nodes reported per paths. We recommed you use this if you run wally without a filter using `-f`
+- `skip-closures`: The default algorithm tries to be complete by returning possible ways in which closures can be used in the program, even if the path is not realistic given the program you are analyzing. This option reduces inaccurate paths by avoiding invalid paths from closures and instead skipping the enclosed function. _Note:_ This option is only supported by the BFS/default search algorithm.
 - `limiter-mode`: See explanation below
 
 #### Limiter modes
 
-At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter` flag, followed by one of the modes below:
+At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter` flag, followed by one of the modes levels below:
 
-- `none`: Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
-- `normal`: _This is the default mode_. Wally will stop constructing call paths once it sees a call to either:
+- `0` (none): Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
+- `1` (normal): _This is the default mode_. Wally will stop constructing call paths once it sees a call to either:
     - A function node A originating in the `main` _function_, followed by a call to node B not in the `main` function belonging to the same package
     - A function node A originating in the `main` _package_ followed by a call to node B inside the `main` function of a different package
     - A function node A originating in the `main` _pacckage_ followed by a function/node B not in the same package _unless_ function/node A is a closure.
-- `strict`: Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
+- `2` (high): Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
+- `3` (strict): Same as `skip-closures` plus all the restrictions above. _Note:_ This option is only supported by the BFS/default search algorithm.
 
 ### Analyzing individual paths
 

@@ -19,9 +19,10 @@ const (
 )
 
 type CallMapper struct {
-	Options Options
-	Match   *match.RouteMatch
-	Stop    bool
+	Options        Options
+	Match          *match.RouteMatch
+	Stop           bool
+	CallgraphNodes map[*ssa.Function]*callgraph.Node
 }
 
 var SearchAlgs = map[string]SearchAlgorithm{
@@ -43,28 +44,32 @@ type LimiterMode int
 const (
 	None LimiterMode = iota
 	Normal
+	High
 	Strict
 )
 
 var LimiterModes = map[string]LimiterMode{
 	"none":   None,
 	"normal": Normal,
+	"high":   High,
 	"strict": Strict,
 }
 
 type Options struct {
-	Filter     string
-	MaxFuncs   int
-	MaxPaths   int
-	PrintNodes bool
-	SearchAlg  SearchAlgorithm
-	Limiter    LimiterMode
+	Filter       string
+	MaxFuncs     int
+	MaxPaths     int
+	PrintNodes   bool
+	SearchAlg    SearchAlgorithm
+	Limiter      LimiterMode
+	SkipClosures bool
 }
 
-func NewCallMapper(match *match.RouteMatch, options Options) *CallMapper {
+func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.Node, options Options) *CallMapper {
 	return &CallMapper{
-		Options: options,
-		Match:   match,
+		Options:        options,
+		Match:          match,
+		CallgraphNodes: nodes,
 	}
 }
 
@@ -94,10 +99,7 @@ func (cm *CallMapper) initPath() []string {
 	return initialPath
 }
 
-var cag map[*ssa.Function]*callgraph.Node
-
-func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options, cg map[*ssa.Function]*callgraph.Node) *match.CallPaths {
-	cag = cg
+func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
 	initialPath := cm.initPath()
 	callPaths := &match.CallPaths{}
 	cm.BFS(s, initialPath, callPaths, options)
@@ -115,6 +117,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
 	newPath := appendNodeToPath(destination, path, options, site)
+
 	if options.Limiter > 0 && isMainFunc(destination) {
 		paths.InsertPaths(newPath, false, false)
 		cm.Stop = false
@@ -140,7 +143,15 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	cm.Stop = false
 	allOutsideModule := true
 	allOutsideMainPkg := true
-	for _, e := range destination.In {
+
+	fnT := destination
+	if options.Limiter >= Strict {
+		if strings.Contains(destination.Func.Name(), "$") {
+			encEdges := cm.CallgraphNodes[destination.Func.Parent()]
+			fnT = encEdges
+		}
+	}
+	for _, e := range fnT.In {
 		if paths.Paths != nil && options.MaxPaths > 0 && len(paths.Paths) >= options.MaxPaths {
 			cm.Match.SSA.PathLimited = true
 			continue
@@ -199,9 +210,13 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 
 		newPath := appendNodeToPath(currentNode, currentPath, options, nil)
 
-		if strings.Contains(currentNode.Func.Name(), "$") {
-			encEdges := cag[currentNode.Func.Parent()]
-			currentNode = encEdges
+		// If we are not interested in closure call maps (which can often be incorrect) we instead worry about the enclosing
+		// func and not the closure
+		if options.Limiter >= Strict {
+			if strings.Contains(currentNode.Func.Name(), "$") {
+				encEdges := cm.CallgraphNodes[currentNode.Func.Parent()]
+				currentNode = encEdges
+			}
 		}
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
 		for _, e := range currentNode.In {
@@ -282,7 +297,7 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 		return isDifferentMainPkg || isNonMainCallerOrClosure
 	}
 
-	if options.Limiter == Strict {
+	if options.Limiter >= High {
 		return isDifferentMainPkg || isNonMainPkg
 	}
 	return false
