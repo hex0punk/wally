@@ -63,22 +63,14 @@ Say you are evaluating some microservices code in a monorepo and found several f
 - For instance, can it only be reached via a gRPC or HTTP call that eventually lands at the target function, or is there some other process (say, a task run daily by a different process) that can call it with user input (e.g., pulled from a user database) via a different call path?
 - If I find a panic here, how much would it matter? That is, would this be recovered by a function in the call path with a recover() in a defer block?
 
-<<<<<<< HEAD
 To learn how to answer the above questions, jump to the section on [using wally to detect fault tolerance of call paths](##Using-Wally-in-Fuzzing-Efforts-to-Determine-Fault-Tolerance-of-Call-Paths)
-=======
-To learn how to answer the above questions, jump to the section on [using wally to detect fault tolerance of call paths](#Using-Wally-in-Fuzzing-Efforts-to-Determine-Fault-Tolerance-of-Call-Paths)
->>>>>>> main
 
 ## Wally configurations
 
 Wally needs a bit of hand-holding. Though it can also do a pretty good job at guessing paths, it helps a lot if you tell it the packages and functions to look for, along with the parameters that you are hoping to discover and map. So, to help Wally do the job, you can specify a configuration file in YAML that defines a set of indicators.
 
 > [!TIP]
-<<<<<<< HEAD
 > If you are just interested in use cases of a single function, you can run Wally on [single function search mode](###Analyzing-individual-paths)
-=======
-> If you are just interested in use cases of a single function, you can run Wally on [single function search mode](#Analyzing-individual-paths)
->>>>>>> main
 
 Wally runs a number of `indicators` which are basically clues as to whether a function in code may be related to a gRPC or HTTP route. By default, `wally` has a number of built-in `indicators` which check for common ways to set up and call HTTP and RPC methods using standard and popular libraries. However, sometimes a codebase may have custom methods for setting up HTTP routes or for calling HTTP and RPC services. For instance, when reviewing Nomad, you can give Wally the following configuration file with Nomad-specific indicators:
 
