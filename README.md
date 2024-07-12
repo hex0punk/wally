@@ -240,7 +240,7 @@ Wally has the following options to limit the search. These options can help refi
 
 #### Limiter modes
 
-At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter` flag, followed by one of the modes levels below:
+At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter-mode` flag, followed by one of the modes levels below:
 
 - `0` (none): Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
 - `1` (normal): _This is the default mode_ and the preferred mode when you are interested in confirming callpath fault tolerance. Wally will stop constructing call paths once it sees a call to either:
@@ -248,7 +248,7 @@ At its core, Wally uses various algorithms available via the [golang.org/x/tools
     - A function node A originating in the `main` _package_ followed by a call to node B inside the `main` function of a different package
     - A function node A originating in the `main` _pacckage_ followed by a function/node B not in the same package _unless_ function/node A is a closure.
 - `2` (high): Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
-- `3` (strict): Same as `skip-closures` plus all the restrictions above. _Note:_ This option is only supported by the BFS/default search algorithm.
+- `3` (strict): Same as `skip-closures` plus all the restrictions above.
 
 ### Analyzing individual paths
 
