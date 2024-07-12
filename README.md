@@ -271,11 +271,7 @@ The options above map to the following
 
 Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found [here](https://hex0punk.com/posts/fault-tolerance-detection-with-wally/).
 
-<<<<<<< HEAD
 Using the [single function search mode](###Analyzing-individual-paths), we can determine which call paths to a given target function would recover in response to a panic
-=======
-Using the [single function search mode](#Analyzing-individual-paths), we can determine which call paths to a given target function would recover in response to a panic
->>>>>>> main
 
 ```shell
 $ wally map search  -p ./... --func PrintOrPanic --pkg github.com/hex0punk/wally/sampleapp/printer -f github.com/hex0punk/wally/sampleapp -vvv
