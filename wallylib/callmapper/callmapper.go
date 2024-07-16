@@ -214,6 +214,11 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		// func and not the closure
 		if options.Limiter >= Strict || options.SkipClosures {
 			if strings.Contains(currentNode.Func.Name(), "$") {
+				fmt.Println(currentNode.Func.Name())
+				fmt.Println(len(currentNode.Func.FreeVars))
+				fmt.Println(len(currentNode.Func.Signature.String()))
+				fmt.Println(currentNode.Func.Signature.String())
+				fmt.Println(isParam(currentNode.Func))
 				encEdges := cm.CallgraphNodes[currentNode.Func.Parent()]
 				currentNode = encEdges
 			}
@@ -269,6 +274,22 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		paths.InsertPaths(bfsNode.Path, false, false)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
+}
+
+func isParam(fn *ssa.Function) bool {
+	// Check if the function is used as an argument to another function
+	for _, block := range fn.Blocks {
+		for _, instr := range block.Instrs {
+			if call, ok := instr.(*ssa.Call); ok {
+				for _, arg := range call.Call.Args {
+					if arg == fn {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func limitFuncsReached(path []string, options Options) bool {

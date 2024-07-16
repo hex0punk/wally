@@ -97,6 +97,12 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))
 
 	nav.MapRoutes(paths)
+
+	if len(nav.RouteMatches) == 0 {
+		fmt.Println("No matches found")
+		return
+	}
+
 	if runSSA {
 		mapperOptions := callmapper.Options{
 			Filter:       filter,

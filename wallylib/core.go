@@ -75,6 +75,12 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 	case *ast.SelectorExpr:
 		funcIdent = funcExpr.Sel
 		x = funcExpr.X
+	case *ast.IndexExpr: // covers generics
+		if idt, ok := funcExpr.X.(*ast.Ident); ok {
+			funcIdent = idt
+		} else {
+			return nil, errors.New("unable to get func data")
+		}
 	default:
 		return nil, errors.New("unable to get func data")
 	}
