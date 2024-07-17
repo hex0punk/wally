@@ -249,10 +249,12 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 				if ssaEnclosingFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaEnclosingFunc != nil {
 					funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
 					funcMatch.SSA.EnclosedByFunc = ssaEnclosingFunc
+					funcMatch.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce)
 
-					funcMatch.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce, pass.TypesInfo)
 					if funcMatch.SSA.SSAInstruction != nil {
 						funcMatch.SSA.SSAFunc = n.GetFunctionFromCallInstruction(funcMatch.SSA.SSAInstruction)
+					} else {
+						n.Logger.Debug("unable to get SSA instruction for function", "function", ssaEnclosingFunc.Name())
 					}
 				}
 			}
@@ -268,16 +270,11 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	return results, nil
 }
 
-func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, expr *ast.CallExpr, info *types.Info) ssa.CallInstruction {
-	obj := GetObjFromCe(expr, info)
-	if obj == nil {
-		return nil
-	}
-
+func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, expr *ast.CallExpr) ssa.CallInstruction {
 	for _, block := range enclosingFunc.Blocks {
 		for _, instr := range block.Instrs {
 			if call, ok := instr.(ssa.CallInstruction); ok {
-				if n.isMatchingCall(call, obj, expr) {
+				if n.isMatchingCall(call, expr) {
 					return call
 				}
 			}
@@ -287,7 +284,8 @@ func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, e
 	return nil
 }
 
-func (n *Navigator) isMatchingCall(call ssa.CallInstruction, obj types.Object, expr *ast.CallExpr) bool {
+func (n *Navigator) isMatchingCall(call ssa.CallInstruction, expr *ast.CallExpr) bool {
+
 	var cp token.Pos
 	if call.Value() == nil {
 		cp = call.Common().Value.Pos()
@@ -296,7 +294,7 @@ func (n *Navigator) isMatchingCall(call ssa.CallInstruction, obj types.Object, e
 	}
 
 	// Check with Lparem works for non-static calls
-	if cp == obj.Pos() || call.Pos() == expr.Lparen {
+	if cp == expr.Pos() || call.Pos() == expr.Lparen {
 		return true
 	}
 	return false
@@ -361,11 +359,6 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	for i, routeMatch := range n.RouteMatches {
 		i, routeMatch := i, routeMatch
 		routeMatch.SSA.Edges = n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc].In
-		if routeMatch.SSA.Edges == nil {
-			// Fail here
-			log.Fatal("Could not get callgraph from SSA. Make sure the target code can build")
-		}
-
 		cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
