@@ -46,6 +46,7 @@ type Navigator struct {
 type SSA struct {
 	Packages  []*ssa.Package
 	Callgraph *callgraph.Graph
+	Program   *ssa.Program
 }
 
 func NewNavigator(logLevel int, indicators []indicator.Indicator) *Navigator {
@@ -84,6 +85,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 		}
 		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
 		n.SSA.Packages = ssaPkgs
+		n.SSA.Program = prog
 		prog.Build()
 
 		n.Logger.Info("Generating SSA based callgraph", "alg", n.CallgraphAlg)
@@ -184,6 +186,22 @@ func LoadPackages(paths []string) []*packages.Package {
 	return pkgs
 }
 
+func (n *Navigator) cacheVariables(node ast.Node, pass *analysis.Pass) {
+	if genDcl, ok := node.(*ast.GenDecl); ok {
+		n.RecordGlobals(genDcl, pass)
+	}
+
+	if dclStmt, ok := node.(*ast.DeclStmt); ok {
+		if genDcl, ok := dclStmt.Decl.(*ast.GenDecl); ok {
+			n.RecordGlobals(genDcl, pass)
+		}
+	}
+
+	if stmt, ok := node.(*ast.AssignStmt); ok {
+		n.RecordLocals(stmt, pass)
+	}
+}
+
 func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
@@ -201,19 +219,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
-		if gen, ok := node.(*ast.GenDecl); ok {
-			n.RecordGlobals(gen, pass)
-		}
-
-		if gen3, ok := node.(*ast.DeclStmt); ok {
-			if gen2, ok := gen3.Decl.(*ast.GenDecl); ok {
-				n.RecordGlobals(gen2, pass)
-			}
-		}
-
-		if stmt, ok := node.(*ast.AssignStmt); ok {
-			n.RecordLocals(stmt, pass)
-		}
+		n.cacheVariables(node, pass)
 
 		ce, ok := node.(*ast.CallExpr)
 		if !ok {

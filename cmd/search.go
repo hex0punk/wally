@@ -81,6 +81,11 @@ func searchFunc(cmd *cobra.Command, args []string) {
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))
 	nav.MapRoutes(paths)
 
+	if len(nav.RouteMatches) == 0 {
+		fmt.Printf("No matches found for func %s in package %s\n", function, pkg)
+		return
+	}
+
 	nav.Logger.Info("Solving call paths")
 	nav.SolveCallPaths(mapperOptions)
 
