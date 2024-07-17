@@ -220,6 +220,9 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		}
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
 		for _, e := range currentNode.In {
+			if e.Caller.Func.Package() == nil {
+				continue
+			}
 			// Do we care about this node, or is it in the path already (if it calls itself)?
 			if callerInPath(e, newPath) {
 				continue
@@ -318,9 +321,6 @@ func passesFilter(node *callgraph.Node, filter string) bool {
 }
 
 func callerInPath(e *callgraph.Edge, paths []string) bool {
-	if e.Caller.Func.Package() == nil {
-		return true
-	}
 	fp := wallylib.GetFormattedPos(e.Caller.Func.Package(), e.Site.Pos())
 	for _, p := range paths {
 		if strings.Contains(p, fp) {
