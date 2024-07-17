@@ -318,8 +318,12 @@ func passesFilter(node *callgraph.Node, filter string) bool {
 }
 
 func callerInPath(e *callgraph.Edge, paths []string) bool {
+	if e.Caller.Func.Package() == nil {
+		return true
+	}
+	fp := wallylib.GetFormattedPos(e.Caller.Func.Package(), e.Site.Pos())
 	for _, p := range paths {
-		if strings.Contains(p, fmt.Sprintf("[%s]", e.Caller.Func.Name())) {
+		if strings.Contains(p, fp) {
 			return true
 		}
 	}
