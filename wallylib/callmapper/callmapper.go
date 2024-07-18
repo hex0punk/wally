@@ -146,7 +146,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 
 	fnT := destination
 	if options.Limiter >= Strict || options.SkipClosures {
-		if strings.Contains(destination.Func.Name(), "$") {
+		if isClosure(destination.Func) {
 			encEdges := cm.CallgraphNodes[destination.Func.Parent()]
 			fnT = encEdges
 		}
@@ -202,10 +202,6 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			continue
 		}
 
-		if currentNode.Func.Name() == "getScrollDepthCounts$1$1" {
-			fmt.Println(currentNode)
-		}
-
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
 		if limitFuncsReached(currentPath, options) {
 			paths.InsertPaths(currentPath, true, false)
@@ -217,7 +213,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		// If we are not interested in closure call maps (which can often be incorrect) we instead worry about the enclosing
 		// func and not the closure
 		if options.Limiter >= Strict || options.SkipClosures {
-			if strings.Contains(currentNode.Func.Name(), "$") {
+			if isClosure(currentNode.Func) {
 				encEdges := cm.CallgraphNodes[currentNode.Func.Parent()]
 				currentNode = encEdges
 			}
@@ -275,10 +271,9 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	}
 }
 
-// isFunctionPassedAsArgument checks if the function is passed as an argument to another function
-func isFunctionPassedAsArgument(targetNode *callgraph.Node, nodes *callgraph.Node) *ssa.Function {
-	//for _, node := range nodes. {
-	for _, edge := range nodes.Out {
+// closureArgumentOf checks if the function is passed as an argument to another function
+func closureArgumentOf(targetNode *callgraph.Node, edges *callgraph.Node) *ssa.Function {
+	for _, edge := range edges.Out {
 		for _, arg := range edge.Site.Common().Args {
 			if argFn, ok := arg.(*ssa.MakeClosure); ok {
 				if argFn.Fn == targetNode.Func {
@@ -289,7 +284,6 @@ func isFunctionPassedAsArgument(targetNode *callgraph.Node, nodes *callgraph.Nod
 			}
 		}
 	}
-	//}
 	return nil
 }
 
@@ -316,7 +310,7 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 
 	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
 	isNonMainPkg := callerPkg.Name() != "main" && currentPkg.Path() != callerPkg.Path()
-	isNonMainCallerOrClosure := isNonMainPkg && !strings.Contains(currentNode.Func.Name(), "$")
+	isNonMainCallerOrClosure := isNonMainPkg && !isClosure(currentNode.Func)
 
 	if options.Limiter == Normal {
 		return isDifferentMainPkg || isNonMainCallerOrClosure
@@ -369,25 +363,71 @@ func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, options
 	return append(path, nodeDescription)
 }
 
+//func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
+//	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
+//
+//	if function.Recover != nil {
+//		return cm.getRecoverString(pkg, function, function.Recover.Index-1, basePos)
+//	} else if s != nil && strings.Contains(function.Name(), "$") {
+//		enclosingFunc := closureArgumentOf(s, cm.CallgraphNodes[s.Func.Parent()])
+//		if enclosingFunc != nil && enclosingFunc.Recover != nil {
+//			return cm.getRecoverString(pkg, enclosingFunc, enclosingFunc.Recover.Index-1, basePos)
+//		}
+//		if enclosingFunc != nil {
+//			for _, af := range enclosingFunc.AnonFuncs {
+//				if af.Recover != nil {
+//					return cm.getRecoverString(pkg, af, af.Recover.Index-1, basePos)
+//				}
+//			}
+//		}
+//	}
+//	return baseStr
+//}
+
 func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 
+	isRecoverable := cm.isRecoverable(function, s)
+	if isRecoverable {
+		return fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
+	}
+
+	return baseStr
+}
+
+func (cm *CallMapper) isRecoverable(function *ssa.Function, s *callgraph.Node) bool {
+	if s != nil && function != s.Func {
+		fmt.Println("WHAT THE HELL")
+	}
 	if function.Recover != nil {
-		return cm.getRecoverString(pkg, function, function.Recover.Index-1, basePos)
-	} else if s != nil && strings.Contains(function.Name(), "$") {
-		enclosingFunc := isFunctionPassedAsArgument(s, cm.CallgraphNodes[s.Func.Parent()])
+		if s == nil {
+			fmt.Println("SHITE")
+		}
+		rec, err := findDeferRecover(function, function.Recover.Index-1)
+		if err == nil && rec {
+			return true
+		}
+	}
+	if s != nil && isClosure(function) {
+		enclosingFunc := closureArgumentOf(s, cm.CallgraphNodes[s.Func.Parent()])
 		if enclosingFunc != nil && enclosingFunc.Recover != nil {
-			return cm.getRecoverString(pkg, enclosingFunc, enclosingFunc.Recover.Index-1, basePos)
+			rec, err := findDeferRecover(enclosingFunc, enclosingFunc.Recover.Index-1)
+			if err == nil && rec {
+				return true
+			}
 		}
 		if enclosingFunc != nil {
 			for _, af := range enclosingFunc.AnonFuncs {
 				if af.Recover != nil {
-					return cm.getRecoverString(pkg, af, af.Recover.Index-1, basePos)
+					rec, err := findDeferRecover(af, af.Recover.Index-1)
+					if err == nil && rec {
+						return true
+					}
 				}
 			}
 		}
 	}
-	return baseStr
+	return false
 }
 
 func (cm *CallMapper) getRecoverString(pkg *ssa.Package, function *ssa.Function, recoverIdx int, basePos string) string {
@@ -416,7 +456,7 @@ func (cm *CallMapper) getRecoverString(pkg *ssa.Package, function *ssa.Function,
 //			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
 //		}
 //	} else if s != nil && strings.Contains(function.Name(), "$") {
-//		enc := isFunctionPassedAsArgument(s, cm.CallgraphNodes[s.Func.Parent()])
+//		enc := closureArgumentOf(s, cm.CallgraphNodes[s.Func.Parent()])
 //		if enc != nil {
 //			if enc.Recover != nil {
 //				rec, err := findDeferRecover(enc, enc.Recover.Index-1)
@@ -531,6 +571,10 @@ func isRecoverCall(instr ssa.Instruction) bool {
 		}
 	}
 	return false
+}
+
+func isClosure(function *ssa.Function) bool {
+	return strings.Contains(function.Name(), "$")
 }
 
 // Only to be used when debugging
