@@ -363,27 +363,6 @@ func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, options
 	return append(path, nodeDescription)
 }
 
-//func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
-//	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
-//
-//	if function.Recover != nil {
-//		return cm.getRecoverString(pkg, function, function.Recover.Index-1, basePos)
-//	} else if s != nil && strings.Contains(function.Name(), "$") {
-//		enclosingFunc := closureArgumentOf(s, cm.CallgraphNodes[s.Func.Parent()])
-//		if enclosingFunc != nil && enclosingFunc.Recover != nil {
-//			return cm.getRecoverString(pkg, enclosingFunc, enclosingFunc.Recover.Index-1, basePos)
-//		}
-//		if enclosingFunc != nil {
-//			for _, af := range enclosingFunc.AnonFuncs {
-//				if af.Recover != nil {
-//					return cm.getRecoverString(pkg, af, af.Recover.Index-1, basePos)
-//				}
-//			}
-//		}
-//	}
-//	return baseStr
-//}
-
 func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 
@@ -440,61 +419,6 @@ func (cm *CallMapper) getRecoverString(pkg *ssa.Package, function *ssa.Function,
 	}
 	return fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 }
-
-//func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
-//	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
-//	if function.Recover != nil {
-//		recoverIdx := 0
-//		if function.Recover != nil {
-//			recoverIdx = function.Recover.Index
-//		}
-//		rec, err := findDeferRecover(function, recoverIdx)
-//		if err != nil {
-//			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-//		}
-//		if rec {
-//			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-//		}
-//	} else if s != nil && strings.Contains(function.Name(), "$") {
-//		enc := closureArgumentOf(s, cm.CallgraphNodes[s.Func.Parent()])
-//		if enc != nil {
-//			if enc.Recover != nil {
-//				rec, err := findDeferRecover(enc, enc.Recover.Index-1)
-//				if err != nil {
-//					baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-//				}
-//				if rec {
-//					baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-//				}
-//			} else {
-//				for _, an := range enc.AnonFuncs {
-//					if an.Recover != nil {
-//						rec, err := findDeferRecover(enc, an.Recover.Index-1)
-//						if err != nil {
-//							baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-//						}
-//						if rec {
-//							baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-//						}
-//					}
-//				}
-//			}
-//
-//		}
-//	}
-//	//} else {
-//	//	if strings.Contains(function.Name(), "$") {
-//	//		rec, err := findDeferRecover(function, function.Recover.Index-1)
-//	//		if err != nil {
-//	//			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-//	//		}
-//	//		if rec {
-//	//			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-//	//		}
-//	//	}
-//	//}
-//	return baseStr
-//}
 
 func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
 	visited := make(map[*ssa.Function]bool)
