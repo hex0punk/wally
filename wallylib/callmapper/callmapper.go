@@ -275,21 +275,42 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	}
 }
 
-// isFunctionPassedAsArgument checks if the function is passed as an argument to another function
-func isFunctionPassedAsArgument(targetNode *callgraph.Node, nodes *callgraph.Node) *ssa.Function {
-	//for _, node := range nodes. {
-	for _, edge := range nodes.Out {
+func (cm *CallMapper) getEnclosingFunctionString(enc *ssa.Function, pkg *ssa.Package, function *ssa.Function, basePos string) string {
+	if enc.Recover != nil {
+		return cm.getRecoverString(pkg, function, enc.Recover.Index-1, basePos)
+	}
+	for _, anonFunc := range enc.AnonFuncs {
+		if anonFunc.Recover != nil {
+			return cm.getRecoverString(pkg, function, anonFunc.Recover.Index-1, basePos)
+		}
+	}
+	return fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
+}
+
+func (cm *CallMapper) getRecoverString(pkg *ssa.Package, function *ssa.Function, recoverIdx int, basePos string) string {
+	rec, err := findDeferRecover(function, recoverIdx)
+	if err != nil {
+		return fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
+	}
+	if rec {
+		return fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
+	}
+	return fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
+}
+
+// argumentOf checks if the function is passed as an argument to another function
+func argumentOf(targetNode *callgraph.Node, parentNode *callgraph.Node) *ssa.Function {
+	for _, edge := range parentNode.Out {
 		for _, arg := range edge.Site.Common().Args {
-			if argFn, ok := arg.(*ssa.MakeClosure); ok {
-				if argFn.Fn == targetNode.Func {
-					if res, ok := edge.Site.Common().Value.(*ssa.Function); ok {
-						return res
+			if closure, ok := arg.(*ssa.MakeClosure); ok {
+				if closure.Fn == targetNode.Func {
+					if parentFunc, ok := edge.Site.Common().Value.(*ssa.Function); ok {
+						return parentFunc
 					}
 				}
 			}
 		}
 	}
-	//}
 	return nil
 }
 
@@ -370,58 +391,16 @@ func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, options
 }
 
 func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
-	baseStr := ""
-	baseStr = fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
-	if function.Recover != nil {
-		recoverIdx := 0
-		if function.Recover != nil {
-			recoverIdx = function.Recover.Index
-		}
-		rec, err := findDeferRecover(function, recoverIdx)
-		if err != nil {
-			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-		}
-		if rec {
-			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-		}
-	} else if s != nil && strings.Contains(function.Name(), "$") {
-		enc := isFunctionPassedAsArgument(s, cm.CallgraphNodes[s.Func.Parent()])
-		if enc != nil {
-			if enc.Recover != nil {
-				rec, err := findDeferRecover(enc, enc.Recover.Index-1)
-				if err != nil {
-					baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-				}
-				if rec {
-					baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-				}
-			} else {
-				for _, an := range enc.AnonFuncs {
-					if an.Recover != nil {
-						rec, err := findDeferRecover(enc, an.Recover.Index-1)
-						if err != nil {
-							baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-						}
-						if rec {
-							baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-						}
-					}
-				}
-			}
+	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 
+	if function.Recover != nil {
+		return cm.getRecoverString(pkg, function, function.Recover.Index, basePos)
+	} else if s != nil && strings.Contains(function.Name(), "$") {
+		enclosingFunc := argumentOf(s, cm.CallgraphNodes[s.Func.Parent()])
+		if enclosingFunc != nil {
+			return cm.getEnclosingFunctionString(enclosingFunc, pkg, function, basePos)
 		}
 	}
-	//} else {
-	//	if strings.Contains(function.Name(), "$") {
-	//		rec, err := findDeferRecover(function, function.Recover.Index-1)
-	//		if err != nil {
-	//			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-	//		}
-	//		if rec {
-	//			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-	//		}
-	//	}
-	//}
 	return baseStr
 }
 
