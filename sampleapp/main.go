@@ -17,12 +17,13 @@ func ThisIsACall(str string) {
 	fmt.Println(str)
 }
 func printCharSafe(word string, idx int) {
-	safe.RunSafely(func() {
-		printer.PrintOrPanic(word, idx)
-	})
+	safe.RunSafely(
+		func() {
+			printer.PrintOrPanic(word, idx)
+		})
 }
 
 func printChar(word string, idx int) {
 	ThisIsACall("HOOOOLA")
-	printer.PrintOrPanic(word, idx)
+	//printer.PrintOrPanic(word, idx)
 }

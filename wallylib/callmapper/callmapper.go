@@ -73,10 +73,10 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 	}
 }
 
-func (cm *CallMapper) initPath() []string {
+func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
-	encStr := getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc)
+	encStr := cm.getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc, s)
 
 	// TODO: No real reason for this to be here
 	siteStr := ""
@@ -88,7 +88,7 @@ func (cm *CallMapper) initPath() []string {
 		if cm.Match.SSA.SSAFunc == nil {
 			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
 		} else {
-			siteStr = getNodeString(siteBasePos, sitePkg, cm.Match.SSA.SSAFunc)
+			siteStr = cm.getNodeString(siteBasePos, sitePkg, cm.Match.SSA.SSAFunc, nil)
 		}
 		cm.Match.SSA.TargetPos = siteStr
 	}
@@ -100,7 +100,7 @@ func (cm *CallMapper) initPath() []string {
 }
 
 func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.CallPaths {
-	initialPath := cm.initPath()
+	initialPath := cm.initPath(s)
 	callPaths := &match.CallPaths{}
 	cm.BFS(s, initialPath, callPaths, options)
 	return callPaths
@@ -108,7 +108,7 @@ func (cm *CallMapper) AllPathsBFS(s *callgraph.Node, options Options) *match.Cal
 
 func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.CallPaths {
 	visited := make(map[int]bool)
-	initialPath := cm.initPath()
+	initialPath := cm.initPath(s)
 	callPaths := &match.CallPaths{}
 	callPaths.Paths = []*match.CallPath{}
 	cm.DFS(s, visited, initialPath, callPaths, options, nil)
@@ -116,7 +116,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node, options Options) *match.Cal
 }
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, options Options, site ssa.CallInstruction) {
-	newPath := appendNodeToPath(destination, path, options, site)
+	newPath := cm.appendNodeToPath(destination, path, options, site)
 
 	if options.Limiter > 0 && isMainFunc(destination) {
 		paths.InsertPaths(newPath, false, false)
@@ -202,13 +202,17 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			continue
 		}
 
+		if currentNode.Func.Name() == "getScrollDepthCounts$1$1" {
+			fmt.Println(currentNode)
+		}
+
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
 		if limitFuncsReached(currentPath, options) {
 			paths.InsertPaths(currentPath, true, false)
 			continue
 		}
 
-		newPath := appendNodeToPath(currentNode, currentPath, options, nil)
+		newPath := cm.appendNodeToPath(currentNode, currentPath, options, nil)
 
 		// If we are not interested in closure call maps (which can often be incorrect) we instead worry about the enclosing
 		// func and not the closure
@@ -240,7 +244,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				copy(newPathCopy, newPath)
 
 				// We want to process the new node we added to the path.
-				newPathWithCaller := appendNodeToPath(e.Caller, newPathCopy, options, e.Site)
+				newPathWithCaller := cm.appendNodeToPath(e.Caller, newPathCopy, options, e.Site)
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
 
 				// Have we reached the max paths set by the user
@@ -269,6 +273,24 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		paths.InsertPaths(bfsNode.Path, false, false)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
+}
+
+// isFunctionPassedAsArgument checks if the function is passed as an argument to another function
+func isFunctionPassedAsArgument(targetNode *callgraph.Node, nodes *callgraph.Node) *ssa.Function {
+	//for _, node := range nodes. {
+	for _, edge := range nodes.Out {
+		for _, arg := range edge.Site.Common().Args {
+			if argFn, ok := arg.(*ssa.MakeClosure); ok {
+				if argFn.Fn == targetNode.Func {
+					if res, ok := edge.Site.Common().Value.(*ssa.Function); ok {
+						return res
+					}
+				}
+			}
+		}
+	}
+	//}
+	return nil
 }
 
 func limitFuncsReached(path []string, options Options) bool {
@@ -330,7 +352,7 @@ func callerInPath(e *callgraph.Edge, paths []string) bool {
 	return false
 }
 
-func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ssa.CallInstruction) []string {
+func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, options Options, site ssa.CallInstruction) []string {
 	if site == nil {
 		return path
 		//return append(path, fmt.Sprintf("Func: %s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
@@ -342,23 +364,64 @@ func appendNodeToPath(s *callgraph.Node, path []string, options Options, site ss
 
 	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
 
-	nodeDescription := getNodeString(fp, s.Func.Pkg, s.Func)
+	nodeDescription := cm.getNodeString(fp, s.Func.Pkg, s.Func, s)
 
 	return append(path, nodeDescription)
 }
 
-func getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function) string {
+func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
 	baseStr := ""
 	baseStr = fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 	if function.Recover != nil {
-		rec, err := findDeferRecover(function, function.Recover.Index-1)
+		recoverIdx := 0
+		if function.Recover != nil {
+			recoverIdx = function.Recover.Index
+		}
+		rec, err := findDeferRecover(function, recoverIdx)
 		if err != nil {
 			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
 		}
 		if rec {
 			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
 		}
+	} else if s != nil && strings.Contains(function.Name(), "$") {
+		enc := isFunctionPassedAsArgument(s, cm.CallgraphNodes[s.Func.Parent()])
+		if enc != nil {
+			if enc.Recover != nil {
+				rec, err := findDeferRecover(enc, enc.Recover.Index-1)
+				if err != nil {
+					baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
+				}
+				if rec {
+					baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
+				}
+			} else {
+				for _, an := range enc.AnonFuncs {
+					if an.Recover != nil {
+						rec, err := findDeferRecover(enc, an.Recover.Index-1)
+						if err != nil {
+							baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
+						}
+						if rec {
+							baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
+						}
+					}
+				}
+			}
+
+		}
 	}
+	//} else {
+	//	if strings.Contains(function.Name(), "$") {
+	//		rec, err := findDeferRecover(function, function.Recover.Index-1)
+	//		if err != nil {
+	//			baseStr = fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
+	//		}
+	//		if rec {
+	//			baseStr = fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
+	//		}
+	//	}
+	//}
 	return baseStr
 }
 
@@ -396,6 +459,11 @@ func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool,
 				if callee := it.Call.Value; callee != nil {
 					if callee.Name() == "recover" {
 						return true, nil
+					}
+					if nestedFunc, ok := callee.(*ssa.Function); ok {
+						if _, err := findDeferRecoverRecursive(nestedFunc, visited, 0); err != nil {
+							return true, nil
+						}
 					}
 				}
 			case *ssa.MakeClosure:
