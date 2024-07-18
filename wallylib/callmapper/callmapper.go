@@ -76,7 +76,8 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
-	encStr := cm.getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc, s)
+	//encStr := cm.getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc, s)
+	encStr := cm.getNodeString(encBasePos, s)
 
 	// TODO: No real reason for this to be here
 	siteStr := ""
@@ -88,7 +89,9 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 		if cm.Match.SSA.SSAFunc == nil {
 			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
 		} else {
-			siteStr = cm.getNodeString(siteBasePos, sitePkg, cm.Match.SSA.SSAFunc, nil)
+			targetFuncNode := cm.CallgraphNodes[cm.Match.SSA.SSAFunc]
+			//siteStr = cm.getNodeString(siteBasePos, sitePkg, cm.Match.SSA.SSAFunc, nil)
+			siteStr = cm.getNodeString(siteBasePos, targetFuncNode)
 		}
 		cm.Match.SSA.TargetPos = siteStr
 	}
@@ -358,15 +361,17 @@ func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, options
 
 	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
 
-	nodeDescription := cm.getNodeString(fp, s.Func.Pkg, s.Func, s)
+	nodeDescription := cm.getNodeString(fp, s)
 
 	return append(path, nodeDescription)
 }
 
-func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *ssa.Function, s *callgraph.Node) string {
+func (cm *CallMapper) getNodeString(basePos string, s *callgraph.Node) string {
+	pkg := s.Func.Pkg
+	function := s.Func
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 
-	isRecoverable := cm.isRecoverable(function, s)
+	isRecoverable := cm.isRecoverable(s)
 	if isRecoverable {
 		return fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
 	}
@@ -374,14 +379,9 @@ func (cm *CallMapper) getNodeString(basePos string, pkg *ssa.Package, function *
 	return baseStr
 }
 
-func (cm *CallMapper) isRecoverable(function *ssa.Function, s *callgraph.Node) bool {
-	if s != nil && function != s.Func {
-		fmt.Println("WHAT THE HELL")
-	}
+func (cm *CallMapper) isRecoverable(s *callgraph.Node) bool {
+	function := s.Func
 	if function.Recover != nil {
-		if s == nil {
-			fmt.Println("SHITE")
-		}
 		rec, err := findDeferRecover(function, function.Recover.Index-1)
 		if err == nil && rec {
 			return true
