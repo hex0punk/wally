@@ -33,6 +33,7 @@ var (
 	searchAlg    string
 	callgraphAlg string
 	skipClosures bool
+	moduleOnly   bool
 )
 
 // mapCmd represents the map command
@@ -58,6 +59,14 @@ var mapCmd = &cobra.Command{
 			return fmt.Errorf("limiter-mode should be less than 4, got %d\n", limiterMode)
 		}
 
+		if filter != "" && cmd.Flags().Changed("module-only") && moduleOnly == true {
+			return fmt.Errorf("cannot set module-only to true with a non empty filter (set to %s)", filter)
+		}
+
+		if filter != "" {
+			moduleOnly = false
+		}
+
 		return nil
 	},
 	Run: mapRoutes,
@@ -67,16 +76,17 @@ func init() {
 	rootCmd.AddCommand(mapCmd)
 
 	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
-	mapCmd.PersistentFlags().IntVar(&limiterMode, "limiter-mode", 1, "Logic level to limit callgraph algorithm sporious nodes")
+	mapCmd.PersistentFlags().IntVar(&limiterMode, "limiter-mode", 3, "Logic level to limit callgraph algorithm sporious nodes")
 	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 	mapCmd.PersistentFlags().StringVar(&callgraphAlg, "callgraph-alg", "cha", "cha || rta || vta")
 	mapCmd.PersistentFlags().BoolVar(&skipClosures, "skip-closures", false, "Skip closure edges which can lead to innacurate results")
+	mapCmd.PersistentFlags().BoolVar(&moduleOnly, "module-only", true, "Filter call paths by the match module.")
 
 	mapCmd.PersistentFlags().StringSliceVarP(&paths, "paths", "p", paths, "The comma separated package paths to target. Use ./.. for current directory and subdirectories")
 	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
 	mapCmd.PersistentFlags().StringVar(&searchAlg, "search-alg", "bfs", "Search algorithm used for mapping callgraph (dfs or bfs)")
 	mapCmd.PersistentFlags().BoolVar(&runSSA, "ssa", false, "whether to run some checks using SSA")
-	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter package for call graph search")
+	mapCmd.PersistentFlags().StringVarP(&filter, "filter", "f", "", "Filter string for call graph search. Setting a non empty filter sets module-only to false")
 	mapCmd.PersistentFlags().IntVar(&maxFuncs, "max-funcs", 0, "Limit the max number of nodes or functions per call path")
 	mapCmd.PersistentFlags().IntVar(&maxPaths, "max-paths", 0, "Max paths per node. This helps when wally encounters recursive calls")
 	mapCmd.PersistentFlags().BoolVar(&printNodes, "print-nodes", false, "Print the position of call graph paths rather than node")
@@ -112,6 +122,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 			SearchAlg:    callmapper.SearchAlgs[searchAlg],
 			Limiter:      callmapper.LimiterMode(limiterMode),
 			SkipClosures: skipClosures,
+			ModuleOnly:   moduleOnly,
 		}
 		nav.Logger.Info("Solving call paths")
 		nav.SolveCallPaths(mapperOptions)

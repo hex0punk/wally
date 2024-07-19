@@ -245,6 +245,8 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Whether we are able to get params or not we have a match
 		funcMatch := match.NewRouteMatch(*route, pos)
 
+		funcMatch.Module = n.GetModuleName(funcInfo.Pkg)
+
 		// Now try to get the params for methods, path, etc.
 		funcMatch.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
 
@@ -367,9 +369,9 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 		routeMatch.SSA.Edges = n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc].In
 		cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
 		if options.SearchAlg == callmapper.Dfs {
-			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
 		} else {
-			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc], options)
+			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
 		}
 	}
 }
@@ -432,6 +434,24 @@ func (n *Navigator) RecordLocals(gen *ast.AssignStmt, pass *analysis.Pass) {
 			pass.ExportObjectFact(o1, gv)
 		}
 	}
+}
+
+func (n *Navigator) GetModuleName(typesPkg *types.Package) string {
+	pkg := n.getPackagesPackageFromTypesPackage(typesPkg)
+	if pkg.Module != nil {
+		return pkg.Module.Path
+	}
+	return ""
+}
+
+func (n *Navigator) getPackagesPackageFromTypesPackage(typesPkg *types.Package) *packages.Package {
+	typesPkgPath := typesPkg.Path()
+	for _, pkg := range n.Packages {
+		if pkg.PkgPath == typesPkgPath {
+			return pkg
+		}
+	}
+	return nil
 }
 
 func GetObjFromCe(ce *ast.CallExpr, info *types.Info) types.Object {

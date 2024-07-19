@@ -28,6 +28,7 @@ func PrintMach(match match.RouteMatch) {
 	fmt.Println("Indicator ID: ", match.Indicator.Id)
 	fmt.Println("Package: ", match.Indicator.Package)
 	fmt.Println("Function: ", match.Indicator.Function)
+	fmt.Println("Module: ", match.Module)
 	fmt.Println("Params: ")
 	for k, v := range match.Params {
 		if v == "" {
