@@ -268,7 +268,7 @@ The options above map to the following
 - `--func Parse`: We are interested only in the `Parse` function
 - `--pkg github.com/hashicorp/cronexpr`: Of package `github.com/hashicorp/cronexpr`
 - `-vvv`: Very, very verbose
-- `-f github.com/hashicorp/`: This tells Wally that we are only interested in paths within packages that start with `github.com/hashicorp/`. This avoids getting paths that reach beyond the scope we are interested in. Otherwise, we'd get nodes in standard Go libraries, etc.
+- `-f github.com/hashicorp/`: This tells Wally that we are only interested in paths within packages that start with `github.com/hashicorp/`. This avoids getting paths that reach beyond the scope we are interested in. Otherwise, we'd get nodes in standard Go libraries, etc. **Note:** this is optional, as by default wally will filter packages by the module string of each function match.
 
 ## Using Wally in Fuzzing Efforts to Determine Fault Tolerance of Call Paths
 
