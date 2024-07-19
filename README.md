@@ -225,6 +225,8 @@ When running Wally in SSA mode against large codebases wally might run get lost 
 $ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/" --max-paths 50
 ```
 
+Additionally, there may be cases where a module cannot be found for a given function match e.g., in the case the function belongs to the standard library). By setting a filter using `-f <filter>` and keeping `module-only` set to `true`, wally will first default to filtering by the module strings and use the specified filter string whenever it cannot detect a module for a function match.
+
 Where `-f` defines a filter for the call stack search function. 
 
 #### Using an empty filter with `--module-only=false`
