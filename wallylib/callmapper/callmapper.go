@@ -68,7 +68,7 @@ type Options struct {
 
 func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.Node, options Options) *CallMapper {
 	// Rather than adding another state to check for, this is easier
-	if options.ModuleOnly {
+	if options.ModuleOnly && match.Module != "" {
 		options.Filter = match.Module
 	}
 	return &CallMapper{

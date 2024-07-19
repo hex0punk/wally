@@ -59,12 +59,8 @@ var mapCmd = &cobra.Command{
 			return fmt.Errorf("limiter-mode should be less than 4, got %d\n", limiterMode)
 		}
 
-		if filter != "" && cmd.Flags().Changed("module-only") && moduleOnly == true {
-			return fmt.Errorf("cannot set module-only to true with a non empty filter (set to %s)", filter)
-		}
-
-		if filter != "" {
-			moduleOnly = false
+		if filter != "" && moduleOnly == true {
+			fmt.Printf("You've set module-only to true with a non empty filter (%s). The module filter will only be used as a fallback in the case the that a module cannot be found during analysis. Set module-only to false if that is not the behavior you want\n", filter)
 		}
 
 		return nil
