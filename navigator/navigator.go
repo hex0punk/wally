@@ -438,6 +438,11 @@ func (n *Navigator) RecordLocals(gen *ast.AssignStmt, pass *analysis.Pass) {
 
 func (n *Navigator) GetModuleName(typesPkg *types.Package) string {
 	pkg := n.getPackagesPackageFromTypesPackage(typesPkg)
+	// This will happen if the indicator given is for a standard library function
+	// or if the project does not support modules. In such cases, for now, the user would have to specify a filter using the `-f` flag
+	if pkg == nil {
+		return ""
+	}
 	if pkg.Module != nil {
 		return pkg.Module.Path
 	}
