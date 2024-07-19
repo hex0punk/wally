@@ -19,6 +19,7 @@ type RouteMatch struct {
 	Pos        token.Position
 	Signature  *types.Signature
 	EnclosedBy string
+	Module     string
 	SSA        *SSAContext
 }
 

@@ -219,51 +219,54 @@ Possible Paths: 28
 
 ### Filtering call path analysis
 
-When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. In most cases, you'd want to filter analysis to only the module you want to target. For instance, when using wally to find HTTP and gRPC routes in nomad, you'd want to type the command below.
+When running Wally in SSA mode against large codebases wally might run get lost in external libraries used by the target code. By default, Wally will filter call path functions to those belonging only to the module of each match discovered for a given indicator. This is what you'd want in most case. However, you can also filter analysis to only the packages container a string prefix which you can specify using `-f` followed by a string. For instance, when using wally to find HTTP and gRPC routes in nomad, you can to type the command below.
 
 ```shell
-$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/nomad/" --max-paths 50
+$ wally map -p ./... --ssa -vvv -f "github.com/hashicorp/" --max-paths 50
 ```
 
-Where `-f` defines a filter for the call stack search function. If you don't do this, wally may end up getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests.
+Where `-f` defines a filter for the call stack search function. 
+
+#### Using an empty filter with `--module-only=false`
+
+You can also allow wally to look beyond packages belonging to the target module by passing an empty filter and setting `module-only` to `false` (`-f "" --module-only=false`). However, keep in mind that doing so might result in wally getting stuck in some loop as it encounters recursive calls or very lengthy paths in scary dependency forests.
 
 > [!IMPORTANT]
-> If using `-f` is not enough, and you are seeing Wally taking a very long time in the "solving call paths" step, Wally may have encountered some sort of recursive call. In that case, you can use `--max-paths` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `--max-paths`, `--max-funcs`, `-f`, or all three to get the results you need or expect.
+> You can also use `--max-paths` and an integer to limit the number of recursive calls Wally makes when mapping call paths (50 tends to be a good number). This will limit the paths you see in the output, but using a high enough number should still return helpful paths. Experiment with `--max-paths`, `--max-funcs`, `-f`, or all three to get the results you need or expect.
 
 Wally has the following options to limit the search. These options can help refine the results, but can be used for various experimental uses of Wally as well.
 
-- `-f`: filter string which tells wally the path prefix for packages that you are interested in. Typically you'd want to enter the full path for the Go module you are targetting, unless you are interested in paths that may reach to standard Go functions (i.e. `runtime`) via closures, etc.
-- `max-paths`: maximum number of paths per match which wally will collect. This is helpful when the generate callgraphs report cyclic functions
-- `max-funcs`: maxium number of functions or nodes reported per paths. We recommed you use this if you run wally without a filter using `-f`
-- `skip-closures`: The default algorithm tries to be complete by returning possible ways in which closures can be used in the program, even if the path is not realistic given the program you are analyzing. This option reduces inaccurate paths by avoiding invalid paths from closures and instead skipping the enclosed function. _Note:_ This option is only supported by the BFS/default search algorithm.
-- `limiter-mode`: See explanation below
+- `--module-only`: Set to true by default. When set to true wally will restrict the call path search to the module of each function match.
+- `-f`: filter string which tells wally the path prefix for packages that you are interested in. Typically, you'd want to enter the full path for the Go module you are targetting, unless you are interested in paths that may reach to standard Go functions (i.e. `runtime`) via closures, etc.
+- `--max-paths`: maximum number of paths per match which wally will collect. This is helpful when the generate callgraphs report cyclic functions
+- `--max-funcs`: maxium number of functions or nodes reported per paths. We recommed you use this if you run wally without a filter using `-f`
+- `--skip-closures`: The default algorithm tries to be complete by returning possible ways in which closures can be used in the program, even if the path is not realistic given the program you are analyzing. This option reduces inaccurate paths by avoiding invalid paths from closures and instead skipping the enclosed function. _Note:_ This option is only supported by the BFS/default search algorithm.
+- `--limiter-mode`: See explanation below
 
 #### Limiter modes
 
-At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. You can specify how the limiting is done using the `--limiter-mode` flag, followed by one of the modes levels below:
+At its core, Wally uses various algorithms available via the [golang.org/x/tools/go/callgraph](https://pkg.go.dev/golang.org/x/tools/go/callgraph) library. These algorithms can generate [spurious](https://pkg.go.dev/golang.org/x/tools/go/callgraph/cha) results at times which results in functions that go past main at the top of callpaths. To wrangle some of these sort of results, we perform a basic set of logical checks to eliminate or limit incorrect call path functions/nodes. By default, Wally uses the strictest limiter mode. Use the the other modes if you are not getting the results you expected. You can specify how the limiting is done using the `--limiter-mode` flag, followed by one of the modes levels below:
 
-- `0` (none): Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
-- `1` (normal): _This is the default mode_ and the preferred mode when you are interested in confirming callpath fault tolerance. Wally will stop constructing call paths once it sees a call to either:
+- `3` (strict): _This is the default mode_. Same as `skip-closures` plus all the restrictions above. In most cases, this mode and the `-f` filter is enough for getting the most accurate results. Typically, you won't _need_ to use `--max-paths` or `--max-funcs` when using this mode.
+- `2` (high): Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
+- `1` (normal): Wally will stop constructing call paths once it sees a call to either:
     - A function node A originating in the `main` _function_, followed by a call to node B not in the `main` function belonging to the same package
     - A function node A originating in the `main` _package_ followed by a call to node B inside the `main` function of a different package
     - A function node A originating in the `main` _pacckage_ followed by a function/node B not in the same package _unless_ function/node A is a closure.
-- `2` (high): Wally will stop once it sees a function node `A` in the `main` _package_ followed by a call to B in any other package other than the `main` package where A was found.
-- `3` (strict): Same as `skip-closures` plus all the restrictions above.
+- `0` (none): Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
 
 ### Analyzing individual paths
 
 Rather than using a yaml configuration file, you can use `wally map search` for mapping paths to individual functions. For instance:
 
 ```bash
-$ wally map search  -p ./... --func Parse --pkg github.com/hashicorp/cronexpr --max-funcs 7 --max-paths 50 -f github.com/hashicorp/ -vvv
+$ wally map search  -p ./... --func Parse --pkg github.com/hashicorp/cronexpr -f github.com/hashicorp/ -vvv
 ```
 The options above map to the following
 
 - `-p ./...`: Target code is in the current directory
 - `--func Parse`: We are interested only in the `Parse` function
 - `--pkg github.com/hashicorp/cronexpr`: Of package `github.com/hashicorp/cronexpr`
-- `--max-funcs 7`: We only want up to 7 functions per path
-- `--max-paths 50`: Limit the paths to 50
 - `-vvv`: Very, very verbose
 - `-f github.com/hashicorp/`: This tells Wally that we are only interested in paths within packages that start with `github.com/hashicorp/`. This avoids getting paths that reach beyond the scope we are interested in. Otherwise, we'd get nodes in standard Go libraries, etc.
 

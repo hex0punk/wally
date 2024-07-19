@@ -7,6 +7,7 @@ import (
 	"go/build"
 	"go/types"
 	"golang.org/x/tools/go/callgraph"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"wally/indicator"
 )
@@ -259,6 +260,13 @@ func callExprFromExpr(e ast.Expr) []*ast.CallExpr {
 		return GetExprsFromStmt(e.Body)
 	}
 	return nil
+}
+
+func getModuleName(pkg *packages.Package) (string, error) {
+	if pkg.Module != nil {
+		return pkg.Module.Path, nil
+	}
+	return "", fmt.Errorf("module not found for package %s", pkg.PkgPath)
 }
 
 func inStd(node *callgraph.Node) bool {

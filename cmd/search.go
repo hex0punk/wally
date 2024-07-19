@@ -40,6 +40,15 @@ var funcCmd = &cobra.Command{
 		if limiterMode > 3 {
 			return fmt.Errorf("limiter-mode should be less than 4, got %d\n", limiterMode)
 		}
+
+		if filter != "" && cmd.Flags().Changed("module-only") && moduleOnly == true {
+			return fmt.Errorf("cannot set module-only to true with a non empty filter (set to %s)", filter)
+		}
+
+		if filter != "" {
+			moduleOnly = false
+		}
+
 		return nil
 	},
 }
@@ -76,6 +85,7 @@ func searchFunc(cmd *cobra.Command, args []string) {
 		Limiter:      callmapper.LimiterMode(limiterMode),
 		SearchAlg:    callmapper.SearchAlgs[searchAlg],
 		SkipClosures: skipClosures,
+		ModuleOnly:   moduleOnly,
 	}
 
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))
