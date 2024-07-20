@@ -154,10 +154,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 
 	fnT := destination
 	if cm.Options.Limiter >= Strict || cm.Options.SkipClosures {
-		if isClosure(destination.Func) {
-			encEdges := cm.CallgraphNodes[destination.Func.Parent()]
-			fnT = encEdges
-		}
+		fnT, newPath = cm.handleClosure(destination, newPath)
 	}
 	for _, e := range fnT.In {
 		if paths.Paths != nil && cm.Options.MaxPaths > 0 && len(paths.Paths) >= cm.Options.MaxPaths {
@@ -216,16 +213,13 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			continue
 		}
 
-		newPath := cm.appendNodeToPath(currentNode, currentPath, nil)
-
-		// If we are not interested in closure call maps (which can often be incorrect) we instead worry about the enclosing
-		// func and not the closure
+		var newPath []string
 		if cm.Options.Limiter >= Strict || cm.Options.SkipClosures {
-			if isClosure(currentNode.Func) {
-				encEdges := cm.CallgraphNodes[currentNode.Func.Parent()]
-				currentNode = encEdges
-			}
+			currentNode, newPath = cm.handleClosure(currentNode, currentPath)
+		} else {
+			newPath = cm.appendNodeToPath(currentNode, currentPath, nil)
 		}
+
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
 		for _, e := range currentNode.In {
 			if e.Caller.Func.Package() == nil {
@@ -371,6 +365,23 @@ func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, site ss
 	return append(path, nodeDescription)
 }
 
+func (cm *CallMapper) appendInterToPath(s *callgraph.Node, path []string, site ssa.CallInstruction) []string {
+	if site == nil {
+		return path
+		//return append(path, fmt.Sprintf("Func: %s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
+	}
+
+	if cm.Options.PrintNodes || s.Func.Package() == nil {
+		return append(path, s.String())
+	}
+
+	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
+
+	nodeDescription := cm.getNodeString(fp, s)
+
+	return append(path, nodeDescription)
+}
+
 func (cm *CallMapper) getNodeString(basePos string, s *callgraph.Node) string {
 	pkg := s.Func.Pkg
 	function := s.Func
@@ -423,6 +434,20 @@ func (cm *CallMapper) getRecoverString(pkg *ssa.Package, function *ssa.Function,
 		return fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
 	}
 	return fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
+}
+
+func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []string) (*callgraph.Node, []string) {
+	newPath := cm.appendNodeToPath(node, currentPath, nil)
+
+	if isClosure(node.Func) {
+		node = cm.CallgraphNodes[node.Func.Parent()]
+		for isClosure(node.Func) {
+			newPath = append(newPath, fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos())))
+			node = cm.CallgraphNodes[node.Func.Parent()]
+		}
+	}
+
+	return node, newPath
 }
 
 func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
