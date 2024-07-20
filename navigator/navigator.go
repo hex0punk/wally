@@ -110,6 +110,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 		n.Logger.Info("SSA callgraph generated successfully")
 	}
 
+	n.Logger.Info("Finding functions via AST parsing")
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
 	var analyzer = &analysis.Analyzer{
 		Name:     "wally",
