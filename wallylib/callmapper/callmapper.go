@@ -225,6 +225,9 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if e.Caller.Func.Package() == nil {
 				continue
 			}
+			if e.Site == nil {
+				continue
+			}
 			// Do we care about this node, or is it in the path already (if it calls itself)?
 			if callerInPath(e, newPath) {
 				continue
@@ -365,25 +368,8 @@ func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, site ss
 	return append(path, nodeDescription)
 }
 
-func (cm *CallMapper) appendInterToPath(s *callgraph.Node, path []string, site ssa.CallInstruction) []string {
-	if site == nil {
-		return path
-		//return append(path, fmt.Sprintf("Func: %s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
-	}
-
-	if cm.Options.PrintNodes || s.Func.Package() == nil {
-		return append(path, s.String())
-	}
-
-	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
-
-	nodeDescription := cm.getNodeString(fp, s)
-
-	return append(path, nodeDescription)
-}
-
 func (cm *CallMapper) getNodeString(basePos string, s *callgraph.Node) string {
-	pkg := s.Func.Pkg
+	pkg := s.Func.Package()
 	function := s.Func
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 

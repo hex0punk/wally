@@ -262,7 +262,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 					funcMatch.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce)
 
 					if funcMatch.SSA.SSAInstruction != nil {
-						funcMatch.SSA.SSAFunc = n.GetFunctionFromCallInstruction(funcMatch.SSA.SSAInstruction)
+						funcMatch.SSA.SSAFunc = wallylib.GetFunctionFromCallInstruction(funcMatch.SSA.SSAInstruction)
 					} else {
 						n.Logger.Debug("unable to get SSA instruction for function", "function", ssaEnclosingFunc.Name())
 					}
@@ -324,15 +324,6 @@ func (n *Navigator) GetCalledFunctionUsingEnclosing(enclosingFunc *ssa.Function,
 	}
 
 	return nil
-}
-
-func (n *Navigator) GetFunctionFromCallInstruction(callInstr ssa.CallInstruction) *ssa.Function {
-	callCommon := callInstr.Common()
-	if callCommon == nil {
-		return nil
-	}
-
-	return callCommon.StaticCallee()
 }
 
 func (n *Navigator) SSAPkgFromTypesPackage(pkg *types.Package) *ssa.Package {

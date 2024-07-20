@@ -262,6 +262,15 @@ func callExprFromExpr(e ast.Expr) []*ast.CallExpr {
 	return nil
 }
 
+func GetFunctionFromCallInstruction(callInstr ssa.CallInstruction) *ssa.Function {
+	callCommon := callInstr.Common()
+	if callCommon == nil {
+		return nil
+	}
+
+	return callCommon.StaticCallee()
+}
+
 func getModuleName(pkg *packages.Package) (string, error) {
 	if pkg.Module != nil {
 		return pkg.Module.Path, nil
