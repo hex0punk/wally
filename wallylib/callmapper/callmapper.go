@@ -232,6 +232,12 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if callerInPath(e, newPath) {
 				continue
 			}
+			if cm.Options.Limiter >= Strict {
+				siteName := getSiteName(e.Site)
+				if siteName != "" && currentNode.Func.Name() != siteName {
+					continue
+				}
+			}
 			if cm.Options.Filter == "" || passesFilter(e.Caller, cm.Options.Filter) {
 				if mainPkgLimited(currentNode, e, cm.Options) {
 					allAlreadyInPath = false
@@ -274,6 +280,53 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		paths.InsertPaths(bfsNode.Path, false, false)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
+}
+
+func getSiteName(site ssa.CallInstruction) string {
+	callCommon := site.Common()
+	if callCommon == nil {
+		return ""
+	}
+
+	if !callCommon.IsInvoke() {
+		if callCommon.StaticCallee() == nil {
+			//fp := wallylib.GetFormattedPos(pkg, site.Pos())
+			//fmt.Println(fp)
+			return ""
+		}
+		return callCommon.StaticCallee().Name()
+	} else {
+		return callCommon.Method.Name()
+	}
+}
+
+func extractFunctionName(call ssa.CallInstruction) string {
+	var funcName string
+
+	switch call := call.(type) {
+	case *ssa.Call:
+		if fn, ok := call.Call.Value.(*ssa.Function); ok {
+			funcName = fn.Name()
+		} else {
+			funcName = fmt.Sprintf("%s", call.Call.Value)
+		}
+	case *ssa.Go:
+		if fn, ok := call.Call.Value.(*ssa.Function); ok {
+			funcName = fn.Name()
+		} else {
+			funcName = fmt.Sprintf("%s", call.Call.Value)
+		}
+	case *ssa.Defer:
+		if fn, ok := call.Call.Value.(*ssa.Function); ok {
+			funcName = fn.Name()
+		} else {
+			funcName = fmt.Sprintf("%s", call.Call.Value)
+		}
+	default:
+		funcName = "unknown"
+	}
+
+	return funcName
 }
 
 // closureArgumentOf checks if the function is passed as an argument to another function
