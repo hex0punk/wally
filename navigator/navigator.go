@@ -368,6 +368,9 @@ func (n *Navigator) SolvePathsSlow() {
 func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	for i, routeMatch := range n.RouteMatches {
 		i, routeMatch := i, routeMatch
+		if n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc] == nil {
+			continue
+		}
 		cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
