@@ -107,6 +107,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 		default:
 			log.Fatalf("Unknown callgraph alg %s", n.CallgraphAlg)
 		}
+		n.Logger.Info("SSA callgraph generated successfully")
 	}
 
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
@@ -366,7 +367,6 @@ func (n *Navigator) SolvePathsSlow() {
 func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	for i, routeMatch := range n.RouteMatches {
 		i, routeMatch := i, routeMatch
-		routeMatch.SSA.Edges = n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc].In
 		cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])

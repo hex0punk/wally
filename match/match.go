@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"go/token"
 	"go/types"
-	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"strings"
 	"wally/indicator"
@@ -27,7 +26,6 @@ type RouteMatch struct {
 type SSAContext struct {
 	PathLimited    bool
 	EnclosedByFunc *ssa.Function
-	Edges          []*callgraph.Edge
 	CallPaths      *CallPaths
 	SSAInstruction ssa.CallInstruction
 	SSAFunc        *ssa.Function
