@@ -11,6 +11,12 @@ func main() {
 	idx := 7
 	printCharSafe(word, idx)
 	printChar(word, idx)
+	RunAll(word, idx)
+}
+
+func RunAll(str string, idx int) {
+	printCharSafe(str, idx)
+	printer.PrintOrPanic(str, idx)
 }
 
 func ThisIsACall(str string) {

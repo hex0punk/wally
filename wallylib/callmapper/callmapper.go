@@ -46,13 +46,15 @@ const (
 	Normal
 	High
 	Strict
+	VeryStrict
 )
 
 var LimiterModes = map[string]LimiterMode{
-	"none":   None,
-	"normal": Normal,
-	"high":   High,
-	"strict": Strict,
+	"none":        None,
+	"normal":      Normal,
+	"high":        High,
+	"strict":      Strict,
+	"very-strict": Strict,
 }
 
 type Options struct {
@@ -165,7 +167,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 			continue
 		}
 
-		if !shouldSkipNode(e, cm.Options) {
+		if !shouldSkipNode(e, fnT, cm.Options) {
 			if mainPkgLimited(destination, e, cm.Options) {
 				continue
 			}
@@ -232,6 +234,13 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if callerInPath(e, newPath) {
 				continue
 			}
+			if cm.Options.Limiter >= VeryStrict {
+				// make sure that site matches the function of the current node
+				siteName := wallylib.GetCalleNameFromSite(e.Site)
+				if siteName != "" && currentNode.Func.Name() != siteName {
+					continue
+				}
+			}
 			if cm.Options.Filter == "" || passesFilter(e.Caller, cm.Options.Filter) {
 				if mainPkgLimited(currentNode, e, cm.Options) {
 					allAlreadyInPath = false
@@ -274,6 +283,35 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		paths.InsertPaths(bfsNode.Path, false, false)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
+}
+
+func extractFunctionName(call ssa.CallInstruction) string {
+	var funcName string
+
+	switch call := call.(type) {
+	case *ssa.Call:
+		if fn, ok := call.Call.Value.(*ssa.Function); ok {
+			funcName = fn.Name()
+		} else {
+			funcName = fmt.Sprintf("%s", call.Call.Value)
+		}
+	case *ssa.Go:
+		if fn, ok := call.Call.Value.(*ssa.Function); ok {
+			funcName = fn.Name()
+		} else {
+			funcName = fmt.Sprintf("%s", call.Call.Value)
+		}
+	case *ssa.Defer:
+		if fn, ok := call.Call.Value.(*ssa.Function); ok {
+			funcName = fn.Name()
+		} else {
+			funcName = fmt.Sprintf("%s", call.Call.Value)
+		}
+	default:
+		funcName = "unknown"
+	}
+
+	return funcName
 }
 
 // closureArgumentOf checks if the function is passed as an argument to another function
@@ -327,7 +365,14 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	return false
 }
 
-func shouldSkipNode(e *callgraph.Edge, options Options) bool {
+func shouldSkipNode(e *callgraph.Edge, destination *callgraph.Node, options Options) bool {
+	if options.Limiter >= VeryStrict {
+		// make sure that site matches the function of the current node
+		siteName := wallylib.GetCalleNameFromSite(e.Site)
+		if siteName != "" && destination.Func.Name() != siteName {
+			return true
+		}
+	}
 	if options.Filter != "" && e.Caller != nil && !passesFilter(e.Caller, options.Filter) {
 		return true
 	}

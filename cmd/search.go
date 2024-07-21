@@ -37,8 +37,8 @@ var funcCmd = &cobra.Command{
 			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
 		}
 
-		if limiterMode > 3 {
-			return fmt.Errorf("limiter-mode should be less than 4, got %d\n", limiterMode)
+		if limiterMode > 4 {
+			return fmt.Errorf("limiter-mode should not be higher than 4, got %d\n", limiterMode)
 		}
 
 		if filter != "" && moduleOnly == true {
