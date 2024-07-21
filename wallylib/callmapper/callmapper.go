@@ -237,7 +237,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if cm.Options.Limiter >= VeryStrict {
 				// make sure that site matches the function of the current node
 				siteName := wallylib.GetCalleNameFromSite(e.Site)
-				if siteName != "" && currentNode.Func.Name() != siteName {
+				if siteName != "" || currentNode.Func.Name() != siteName {
 					continue
 				}
 			}
@@ -369,7 +369,7 @@ func shouldSkipNode(e *callgraph.Edge, destination *callgraph.Node, options Opti
 	if options.Limiter >= VeryStrict {
 		// make sure that site matches the function of the current node
 		siteName := wallylib.GetCalleNameFromSite(e.Site)
-		if siteName != "" && destination.Func.Name() != siteName {
+		if siteName != "" || destination.Func.Name() != siteName {
 			return true
 		}
 	}
