@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"go/token"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"strings"
@@ -237,7 +238,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if cm.Options.Limiter >= VeryStrict {
 				// make sure that site matches the function of the current node
 				siteName := wallylib.GetCalleNameFromSite(e.Site)
-				if siteName != "" || currentNode.Func.Name() != siteName {
+				if siteName == "" || currentNode.Func.Name() != siteName {
 					continue
 				}
 			}
@@ -285,35 +286,6 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	}
 }
 
-func extractFunctionName(call ssa.CallInstruction) string {
-	var funcName string
-
-	switch call := call.(type) {
-	case *ssa.Call:
-		if fn, ok := call.Call.Value.(*ssa.Function); ok {
-			funcName = fn.Name()
-		} else {
-			funcName = fmt.Sprintf("%s", call.Call.Value)
-		}
-	case *ssa.Go:
-		if fn, ok := call.Call.Value.(*ssa.Function); ok {
-			funcName = fn.Name()
-		} else {
-			funcName = fmt.Sprintf("%s", call.Call.Value)
-		}
-	case *ssa.Defer:
-		if fn, ok := call.Call.Value.(*ssa.Function); ok {
-			funcName = fn.Name()
-		} else {
-			funcName = fmt.Sprintf("%s", call.Call.Value)
-		}
-	default:
-		funcName = "unknown"
-	}
-
-	return funcName
-}
-
 // closureArgumentOf checks if the function is passed as an argument to another function
 func closureArgumentOf(targetNode *callgraph.Node, edges *callgraph.Node) *ssa.Function {
 	for _, edge := range edges.Out {
@@ -344,6 +316,11 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 		return false
 	}
 
+	// This occurs if we are at init
+	if currentNode.Func.Pos() == token.NoPos {
+		return true
+	}
+
 	currentPkg := currentNode.Func.Package().Pkg
 	callerPkg := e.Caller.Func.Package().Pkg
 
@@ -369,7 +346,7 @@ func shouldSkipNode(e *callgraph.Edge, destination *callgraph.Node, options Opti
 	if options.Limiter >= VeryStrict {
 		// make sure that site matches the function of the current node
 		siteName := wallylib.GetCalleNameFromSite(e.Site)
-		if siteName != "" || destination.Func.Name() != siteName {
+		if siteName == "" || destination.Func.Name() != siteName {
 			return true
 		}
 	}
