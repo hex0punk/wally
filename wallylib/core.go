@@ -271,6 +271,22 @@ func GetFunctionFromCallInstruction(callInstr ssa.CallInstruction) *ssa.Function
 	return callCommon.StaticCallee()
 }
 
+func GetCalleNameFromSite(site ssa.CallInstruction) string {
+	callCommon := site.Common()
+	if callCommon == nil {
+		return ""
+	}
+
+	if !callCommon.IsInvoke() {
+		if callCommon.StaticCallee() == nil {
+			return ""
+		}
+		return callCommon.StaticCallee().Name()
+	} else {
+		return callCommon.Method.Name()
+	}
+}
+
 func getModuleName(pkg *packages.Package) (string, error) {
 	if pkg.Module != nil {
 		return pkg.Module.Path, nil

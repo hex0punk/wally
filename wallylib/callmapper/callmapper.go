@@ -46,13 +46,15 @@ const (
 	Normal
 	High
 	Strict
+	VeryStrict
 )
 
 var LimiterModes = map[string]LimiterMode{
-	"none":   None,
-	"normal": Normal,
-	"high":   High,
-	"strict": Strict,
+	"none":        None,
+	"normal":      Normal,
+	"high":        High,
+	"strict":      Strict,
+	"very-strict": Strict,
 }
 
 type Options struct {
@@ -165,7 +167,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 			continue
 		}
 
-		if !shouldSkipNode(e, cm.Options) {
+		if !shouldSkipNode(e, fnT, cm.Options) {
 			if mainPkgLimited(destination, e, cm.Options) {
 				continue
 			}
@@ -232,8 +234,9 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if callerInPath(e, newPath) {
 				continue
 			}
-			if cm.Options.Limiter >= Strict {
-				siteName := getSiteName(e.Site)
+			if cm.Options.Limiter >= VeryStrict {
+				// make sure that site matches the function of the current node
+				siteName := wallylib.GetCalleNameFromSite(e.Site)
 				if siteName != "" && currentNode.Func.Name() != siteName {
 					continue
 				}
@@ -279,24 +282,6 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		bfsNode := e.Value.(BFSNode)
 		paths.InsertPaths(bfsNode.Path, false, false)
 		cm.Match.SSA.PathLimited = pathLimited
-	}
-}
-
-func getSiteName(site ssa.CallInstruction) string {
-	callCommon := site.Common()
-	if callCommon == nil {
-		return ""
-	}
-
-	if !callCommon.IsInvoke() {
-		if callCommon.StaticCallee() == nil {
-			//fp := wallylib.GetFormattedPos(pkg, site.Pos())
-			//fmt.Println(fp)
-			return ""
-		}
-		return callCommon.StaticCallee().Name()
-	} else {
-		return callCommon.Method.Name()
 	}
 }
 
@@ -380,7 +365,14 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	return false
 }
 
-func shouldSkipNode(e *callgraph.Edge, options Options) bool {
+func shouldSkipNode(e *callgraph.Edge, destination *callgraph.Node, options Options) bool {
+	if options.Limiter >= VeryStrict {
+		// make sure that site matches the function of the current node
+		siteName := wallylib.GetCalleNameFromSite(e.Site)
+		if siteName != "" && destination.Func.Name() != siteName {
+			return true
+		}
+	}
 	if options.Filter != "" && e.Caller != nil && !passesFilter(e.Caller, options.Filter) {
 		return true
 	}
