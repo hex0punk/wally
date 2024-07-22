@@ -271,20 +271,15 @@ func GetFunctionFromCallInstruction(callInstr ssa.CallInstruction) *ssa.Function
 	return callCommon.StaticCallee()
 }
 
-func GetCalleNameFromSite(site ssa.CallInstruction) string {
+func SiteMatchesFunc(site ssa.CallInstruction, function *ssa.Function) bool {
 	callCommon := site.Common()
 	if callCommon == nil {
-		return ""
+		return false
 	}
 
-	if !callCommon.IsInvoke() {
-		if callCommon.StaticCallee() == nil {
-			return ""
-		}
-		return callCommon.StaticCallee().Name()
-	} else {
-		return callCommon.Method.Name()
-	}
+	siteFunc := GetFunctionFromSite(site)
+	return siteFunc != nil && siteFunc == function ||
+		callCommon.Method != nil && callCommon.Method.Name() == function.Name()
 }
 
 func GetFunctionFromSite(site ssa.CallInstruction) *ssa.Function {
@@ -294,12 +289,30 @@ func GetFunctionFromSite(site ssa.CallInstruction) *ssa.Function {
 	}
 
 	if !callCommon.IsInvoke() {
-		if callCommon.StaticCallee() == nil {
-			return nil
-		}
 		return callCommon.StaticCallee()
 	} else {
-		return callCommon.Value.Parent()
+		receiverType := callCommon.Method.Type().(*types.Signature).Recv().Type()
+
+		if ptrType, ok := receiverType.(*types.Pointer); ok {
+			receiverType = ptrType.Elem()
+		}
+
+		// Get the method set of the receiver type
+		methodSet := types.NewMethodSet(receiverType)
+		for i := 0; i < methodSet.Len(); i++ {
+			method := methodSet.At(i)
+			if method.Obj().Name() == callCommon.Method.Name() {
+				// Ensure method.Obj() is of type *types.Func
+				if funcObj, ok := method.Obj().(*types.Func); ok {
+					// Use the package's program to find the corresponding ssa.Function
+					if fn := site.Parent().Prog.FuncValue(funcObj); fn != nil {
+						return fn
+					}
+				}
+			}
+		}
+
+		return nil
 	}
 }
 

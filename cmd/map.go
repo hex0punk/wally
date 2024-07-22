@@ -120,7 +120,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 			SkipClosures: skipClosures,
 			ModuleOnly:   moduleOnly,
 		}
-		nav.Logger.Info("Solving call paths")
+		nav.Logger.Info("Solving call paths for matches", "matches", len(nav.RouteMatches))
 		nav.SolveCallPaths(mapperOptions)
 	}
 	nav.Logger.Info("Printing results")
