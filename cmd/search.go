@@ -92,7 +92,7 @@ func searchFunc(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	nav.Logger.Info("Solving call paths")
+	nav.Logger.Info("Solving call paths for matches", "matches", len(nav.RouteMatches))
 	nav.SolveCallPaths(mapperOptions)
 
 	nav.PrintResults(format, outputFile)
