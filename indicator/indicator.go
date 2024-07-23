@@ -24,6 +24,7 @@ type Indicator struct {
 	Params        []RouteParam  `yaml:"params"`
 	IndicatorType IndicatorType `yaml:"indicatorType"`
 	ReceiverType  string        `yaml:"receiverType"`
+	MatchFilter   string        `yaml:"matchFilter"`
 }
 
 type RouteParam struct {
@@ -59,16 +60,17 @@ func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator 
 
 func getStockIndicators() []Indicator {
 	return []Indicator{
-		{
-			Id:       "1",
-			Package:  "net/http",
-			Type:     "",
-			Function: "Handle",
-			Params: []RouteParam{
-				{Name: "pattern"},
-			},
-			IndicatorType: Service,
-		},
+		//{
+		//	Id:       "1",
+		//	Package:  "net/http",
+		//	Type:     "",
+		//	Function: "Handle",
+		//	Params: []RouteParam{
+		//		{Name: "pattern"},
+		//	},
+		//	IndicatorType: Service,
+		//	MatchFilter:   "",
+		//},
 		{
 			Id:       "2",
 			Package:  "google.golang.org/grpc",
@@ -78,6 +80,7 @@ func getStockIndicators() []Indicator {
 				{Name: "method"},
 			},
 			IndicatorType: Service,
+			MatchFilter:   "",
 		},
 	}
 }
