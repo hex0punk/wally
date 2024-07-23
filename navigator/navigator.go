@@ -235,6 +235,13 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
+		if decl := callMapper.EnclosingFunc(ce); decl != nil {
+			funcInfo.EnclosedBy = wallylib.FuncDecl{
+				Pkg:  pass.Pkg,
+				Decl: decl,
+			}
+		}
+
 		route := funcInfo.Match(n.RouteIndicators)
 		if route == nil {
 			// Don't keep going deeper in the node if there are no matches by now?
@@ -267,10 +274,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 						n.Logger.Debug("unable to get SSA instruction for function", "function", ssaEnclosingFunc.Name())
 					}
 				}
-			}
-		} else {
-			if decl := callMapper.EnclosingFunc(ce); decl != nil {
-				funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
 			}
 		}
 
