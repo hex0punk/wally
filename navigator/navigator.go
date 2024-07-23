@@ -363,11 +363,13 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 			continue
 		}
 		cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
+		n.Logger.Debug("Solving paths for match", "match", routeMatch.Pos.String())
 		if options.SearchAlg == callmapper.Dfs {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
 		} else {
 			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
 		}
+		n.Logger.Debug("Solved paths for match", "match", routeMatch.Pos.String(), "numPaths", len(n.RouteMatches[i].SSA.CallPaths.Paths))
 	}
 }
 

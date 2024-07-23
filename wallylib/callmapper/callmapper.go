@@ -55,7 +55,7 @@ var LimiterModes = map[string]LimiterMode{
 	"normal":      Normal,
 	"high":        High,
 	"strict":      Strict,
-	"very-strict": Strict,
+	"very-strict": VeryStrict,
 }
 
 type Options struct {
@@ -127,9 +127,12 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node) *match.CallPaths {
 }
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, site ssa.CallInstruction) {
+	if cm.Options.Limiter > None && destination.Func.Pos() == token.NoPos {
+		return
+	}
 	newPath := cm.appendNodeToPath(destination, path, site)
 
-	if cm.Options.Limiter > 0 && isMainFunc(destination) {
+	if cm.Options.Limiter > None && isMainFunc(destination) {
 		paths.InsertPaths(newPath, false, false)
 		cm.Stop = false
 		return
@@ -160,6 +163,9 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		fnT, newPath = cm.handleClosure(destination, newPath)
 	}
 	for _, e := range fnT.In {
+		if e.Caller.Func.Package() == nil {
+			continue
+		}
 		if paths.Paths != nil && cm.Options.MaxPaths > 0 && len(paths.Paths) >= cm.Options.MaxPaths {
 			cm.Match.SSA.PathLimited = true
 			continue
@@ -204,6 +210,11 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		current := bfsNodeElm.Value.(BFSNode)
 		currentNode := current.Node
 		currentPath := current.Path
+		//printQueue(queue)
+		if cm.Options.Limiter > None && currentNode.Func.Pos() == token.NoPos {
+			paths.InsertPaths(currentPath, false, false)
+			continue
+		}
 
 		if cm.Options.Limiter > None && isMainFunc(currentNode) {
 			paths.InsertPaths(currentPath, false, false)
@@ -224,6 +235,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		}
 
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
+		allMatchSite := true
 		for _, e := range currentNode.In {
 			if e.Caller.Func.Package() == nil {
 				continue
@@ -238,6 +250,8 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if cm.Options.Limiter >= VeryStrict {
 				// make sure that site matches the function of the current node
 				if !wallylib.SiteMatchesFunc(e.Site, currentNode.Func) {
+					// allAlreadyInPath = false
+					allMatchSite = false
 					continue
 				}
 			}
@@ -246,6 +260,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 					allAlreadyInPath = false
 					continue
 				}
+				allMatchSite = true
 				allOutsideMainPkg = false
 				allOutsideFilter = false
 				allAlreadyInPath = false
@@ -263,6 +278,10 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 					break
 				}
 			}
+		}
+		if !allMatchSite {
+			paths.InsertPaths(currentPath, false, false)
+			continue
 		}
 		if allOutsideMainPkg && !allAlreadyInPath {
 			paths.InsertPaths(currentPath, false, false)
