@@ -236,7 +236,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		if decl := callMapper.EnclosingFunc(ce); decl != nil {
-			funcInfo.EnclosedBy = wallylib.FuncDecl{
+			funcInfo.EnclosedBy = &wallylib.FuncDecl{
 				Pkg:  pass.Pkg,
 				Decl: decl,
 			}

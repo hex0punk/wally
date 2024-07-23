@@ -29,7 +29,7 @@ type FuncInfo struct {
 	Name       string
 	Route      string
 	Signature  *types.Signature
-	EnclosedBy FuncDecl
+	EnclosedBy *FuncDecl
 }
 
 type SSAContext struct {
@@ -58,8 +58,8 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 			}
 		}
 
-		if ind.MatchFilter != "" {
-			if !strings.HasPrefix(fi.Package, ind.MatchFilter) {
+		if ind.MatchFilter != "" && fi.EnclosedBy.Pkg != nil {
+			if !strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), ind.MatchFilter) {
 				continue
 			}
 		}
