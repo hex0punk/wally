@@ -175,7 +175,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		}
 
 		if !shouldSkipNode(e, fnT, cm.Options) {
-			if mainPkgLimited(destination, e, cm.Options) {
+			if mainPkgLimited(fnT, e, cm.Options) {
 				continue
 			}
 			allOutsideMainPkg = false
