@@ -381,6 +381,39 @@ Specifying a filename with a `.xdot` extension will create an [xdot](https://gra
 - By default, wally uses a breathd search first algorithm to map all paths. You can instead use depth first search using `--search-alg dfs`
 - Whenever Wally sees it reaches a `main` function, it will stop going further back in the tree to avoid reporting inaccurate paths. If you wish, you can override this by using the `--continue-after-main` flag, allowing you to see some interesting but less likely paths.
 
+### Using DFS vs BFS
+
+When running Wally without `--max-paths` or `--max-funcs`, and with a `--limiter-mode` of `3` (Strict) or higher, both BFS (Breadth-First Search) and DFS (Depth-First Search) should identify the same nodes and sinks, ensuring that if a path from A to Z passing through D exists, both algorithms will find it. However, the handling of cyclic calls differs between the two approaches:
+
+- **Breadth-First Search (BFS)**: This method explores all nodes at the present depth level before moving on to nodes at the next depth level. BFS does not treat repeated calls to the same function within different branches as cycles unless the calls occur on the same line. This approach ensures that all potential paths are explored, making it ideal for comprehensive results, including paths with repeated function calls. Use BFS when you want to capture the most complete set of results, including paths where the same function may be called multiple times.
+
+- **Depth-First Search (DFS)**: This method explores as far as possible along a branch before backtracking. DFS treats repeated calls to the same function as cyclical if the call is encountered again within the same path, stopping the search at that point. This approach prevents revisiting the same functions multiple times within a single path, making it suitable for scenarios where only unique paths from start to finish are of interest. Use DFS when you are interested in finding all distinct paths from X to Z without regard to circular calls.
+
+This is intentional, as it allows the user to use either option to fit their needs.
+
+For example, consider the following path:
+
+```go
+- foo:128
+- bar:44
+- foo:124
+- myFunc:12
+```
+
+In this path, `foo` at line 128 calls `bar`, which in turn calls `foo` again at line 124, eventually calling `myFunc`. In this scenario, BFS will continue to collect nodes even if `foo` is called multiple times as long as `foo` is called from different positions (line and column number), while DFS will consider the second call to foo as part of a cycle and will not continue further along that path.
+
+- Use BFS: When you need the most comprehensive results, capturing all possible call paths, even those with repeated function calls.
+- Use DFS: When you want to avoid paths with repeated function calls, focusing instead on distinct paths from start to finish.
+
+Both methods will avoid cyclical calls if, say, `foo` is called twice in a path from the same line number. For instance, you will never see a result such as the one below:
+
+```go
+- foo:124
+- bar:44
+- foo:124
+- myFunc:12
+```
+
 ## The power of Wally
 
 At its core, Wally is, essentially, a function mapper. You can define functions in configuration files that have nothing to do with HTTP or RPC routes to obtain the same information that is described here.
