@@ -254,7 +254,11 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Whether we are able to get params or not we have a match
 		funcMatch := match.NewRouteMatch(*route, pos)
 
-		funcMatch.Module = n.GetModuleName(funcInfo.Pkg)
+		if modName := n.GetModuleName(funcInfo.Pkg); modName != "" {
+			funcMatch.Module = modName
+		} else {
+			funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
+		}
 
 		// Now try to get the params for methods, path, etc.
 		funcMatch.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
