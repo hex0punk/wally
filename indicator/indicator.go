@@ -80,7 +80,7 @@ func getStockIndicators() []Indicator {
 				{Name: "method"},
 			},
 			IndicatorType: Service,
-			MatchFilter:   "",
+			MatchFilter:   "fs/services/frida",
 		},
 	}
 }

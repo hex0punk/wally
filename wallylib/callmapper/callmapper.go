@@ -239,7 +239,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		}
 
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
-		//allMatchSite := true
+		allMismatchSite := true
 		for _, e := range iterNode.In {
 			if e.Caller.Func.Package() == nil {
 				continue
@@ -254,8 +254,8 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			if cm.Options.Limiter >= VeryStrict {
 				// make sure that site matches the function of the current node
 				if !wallylib.SiteMatchesFunc(e.Site, iterNode.Func) {
+					allMismatchSite = false
 					allAlreadyInPath = false
-					//allMatchSite = false
 					allOutsideFilter = false
 					continue
 				}
@@ -265,7 +265,8 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 					allAlreadyInPath = false
 					continue
 				}
-				//allMatchSite = true
+
+				allMismatchSite = false
 				allOutsideMainPkg = false
 				allOutsideFilter = false
 				allAlreadyInPath = false
@@ -284,16 +285,16 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				}
 			}
 		}
-		//if !allMatchSite {
-		//	paths.InsertPaths(currentPath, false, false)
-		//	continue
-		//}
 		if allOutsideMainPkg && !allAlreadyInPath {
 			paths.InsertPaths(newPath, false, false)
 			continue
 		}
 		if cm.Options.Filter != "" && allOutsideFilter {
 			paths.InsertPaths(newPath, false, true)
+			continue
+		}
+		if allMismatchSite {
+			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
 		if allAlreadyInPath {
