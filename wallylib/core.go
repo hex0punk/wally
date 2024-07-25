@@ -9,16 +9,27 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
+	"strings"
 	"wally/indicator"
 )
 
+type FuncDecl struct {
+	Pkg  *types.Package
+	Decl *ast.FuncDecl
+}
+
+func (f *FuncDecl) String() string {
+	return fmt.Sprintf("%s.%s", f.Pkg.Name(), f.Decl.Name.String())
+}
+
 type FuncInfo struct {
-	Package   string
-	Pkg       *types.Package
-	Type      string
-	Name      string
-	Route     string
-	Signature *types.Signature
+	Package    string
+	Pkg        *types.Package
+	Type       string
+	Name       string
+	Route      string
+	Signature  *types.Signature
+	EnclosedBy *FuncDecl
 }
 
 type SSAContext struct {
@@ -43,6 +54,12 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 
 		if ind.ReceiverType != "" {
 			if !fi.matchReceiver(ind.Package, ind.ReceiverType) {
+				continue
+			}
+		}
+
+		if ind.MatchFilter != "" && fi.EnclosedBy.Pkg != nil {
+			if !strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), ind.MatchFilter) {
 				continue
 			}
 		}

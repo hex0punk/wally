@@ -8,6 +8,7 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"strings"
+	"sync"
 	"wally/match"
 	"wally/wallylib"
 )
@@ -23,6 +24,7 @@ type CallMapper struct {
 	Options        Options
 	Match          *match.RouteMatch
 	Stop           bool
+	pathMutex      sync.Mutex
 	CallgraphNodes map[*ssa.Function]*callgraph.Node
 }
 
@@ -211,6 +213,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		currentNode := current.Node
 		currentPath := current.Path
 		//printQueue(queue)
+
 		if cm.Options.Limiter > None && currentNode.Func.Pos() == token.NoPos {
 			paths.InsertPaths(currentPath, false, false)
 			continue
@@ -228,15 +231,16 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		}
 
 		var newPath []string
+		iterNode := currentNode
 		if cm.Options.Limiter >= Strict || cm.Options.SkipClosures {
-			currentNode, newPath = cm.handleClosure(currentNode, currentPath)
+			iterNode, newPath = cm.handleClosure(currentNode, currentPath)
 		} else {
 			newPath = cm.appendNodeToPath(currentNode, currentPath, nil)
 		}
 
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
-		allMatchSite := true
-		for _, e := range currentNode.In {
+		allMismatchSite := true
+		for _, e := range iterNode.In {
 			if e.Caller.Func.Package() == nil {
 				continue
 			}
@@ -249,18 +253,19 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			}
 			if cm.Options.Limiter >= VeryStrict {
 				// make sure that site matches the function of the current node
-				if !wallylib.SiteMatchesFunc(e.Site, currentNode.Func) {
-					// allAlreadyInPath = false
-					allMatchSite = false
+				if !wallylib.SiteMatchesFunc(e.Site, iterNode.Func) {
+					allMismatchSite = false
+					allAlreadyInPath = false
 					continue
 				}
 			}
 			if cm.Options.Filter == "" || passesFilter(e.Caller, cm.Options.Filter) {
-				if mainPkgLimited(currentNode, e, cm.Options) {
+				if mainPkgLimited(iterNode, e, cm.Options) {
 					allAlreadyInPath = false
 					continue
 				}
-				allMatchSite = true
+
+				allMismatchSite = false
 				allOutsideMainPkg = false
 				allOutsideFilter = false
 				allAlreadyInPath = false
@@ -271,7 +276,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				// We want to process the new node we added to the path.
 				newPathWithCaller := cm.appendNodeToPath(e.Caller, newPathCopy, e.Site)
 				queue.PushBack(BFSNode{Node: e.Caller, Path: newPathWithCaller})
-
+				//printQueue(queue)
 				// Have we reached the max paths set by the user
 				if cm.Options.MaxPaths > 0 && queue.Len()+len(paths.Paths) >= cm.Options.MaxPaths {
 					pathLimited = true
@@ -279,20 +284,20 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				}
 			}
 		}
-		if !allMatchSite {
-			paths.InsertPaths(currentPath, false, false)
-			continue
-		}
 		if allOutsideMainPkg && !allAlreadyInPath {
-			paths.InsertPaths(currentPath, false, false)
+			paths.InsertPaths(newPath, false, false)
 			continue
 		}
 		if cm.Options.Filter != "" && allOutsideFilter {
-			paths.InsertPaths(currentPath, false, true)
+			paths.InsertPaths(newPath, false, true)
+			continue
+		}
+		if allMismatchSite {
+			paths.InsertPaths(currentPath, false, false)
 			continue
 		}
 		if allAlreadyInPath {
-			paths.InsertPaths(currentPath, false, false)
+			paths.InsertPaths(newPath, false, false)
 		}
 	}
 

@@ -235,6 +235,13 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
+		if decl := callMapper.EnclosingFunc(ce); decl != nil {
+			funcInfo.EnclosedBy = &wallylib.FuncDecl{
+				Pkg:  pass.Pkg,
+				Decl: decl,
+			}
+		}
+
 		route := funcInfo.Match(n.RouteIndicators)
 		if route == nil {
 			// Don't keep going deeper in the node if there are no matches by now?
@@ -247,7 +254,11 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Whether we are able to get params or not we have a match
 		funcMatch := match.NewRouteMatch(*route, pos)
 
-		funcMatch.Module = n.GetModuleName(funcInfo.Pkg)
+		if modName := n.GetModuleName(funcInfo.Pkg); modName != "" {
+			funcMatch.Module = modName
+		} else {
+			funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
+		}
 
 		// Now try to get the params for methods, path, etc.
 		funcMatch.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
@@ -267,10 +278,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 						n.Logger.Debug("unable to get SSA instruction for function", "function", ssaEnclosingFunc.Name())
 					}
 				}
-			}
-		} else {
-			if decl := callMapper.EnclosingFunc(ce); decl != nil {
-				funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
 			}
 		}
 
