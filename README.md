@@ -102,6 +102,13 @@ indicators:
 
 Note that you can specify the parameter that you want Wally to attempt to solve the value to. If you don't know the name of the parameter (per the function signature), you can give it the position in the signature. You can then use the `--config` or `-c` flag along with the path to the configuration file.
 
+### Match Filters vs. Path Filters
+
+You can provide a match filter or path filters to wally. 
+
+- **Match Filters**. You can provide match filters via `--match-filter <filter>` when using the `search` feature (see [single function search mode](###Analyzing-individual-paths))  in the CLI or `matchFilter` as a YAML element. Match filters are used by wally when collecting the initial set of matches and before performing path analysis (if using `--SSA` or the `search` feature). If a match filter is provided, Wally will check the function call site is in a package that contains the match filter as a prefix string.
+- **Path filters**. You can provide a path filter via the CLI via `-f <string>`. The match filter is used during path analysis only. Wally makes sure that any functions that are part of a path to a match come from a package that contains the provided string a prefix. You can read more about this in the [Filtering call path analysis](#Filtering-call-path-analysis) section
+
 ## Route Detection
 
 A good test project to run it against is [nomad](https://github.com/hashicorp/nomad) because it has a lot of routes set up and called all over the place. I suggest the following:
