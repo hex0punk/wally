@@ -60,17 +60,17 @@ func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator 
 
 func getStockIndicators() []Indicator {
 	return []Indicator{
-		//{
-		//	Id:       "1",
-		//	Package:  "net/http",
-		//	Type:     "",
-		//	Function: "Handle",
-		//	Params: []RouteParam{
-		//		{Name: "pattern"},
-		//	},
-		//	IndicatorType: Service,
-		//	MatchFilter:   "",
-		//},
+		{
+			Id:       "1",
+			Package:  "net/http",
+			Type:     "",
+			Function: "Handle",
+			Params: []RouteParam{
+				{Name: "pattern"},
+			},
+			IndicatorType: Service,
+			MatchFilter:   "",
+		},
 		{
 			Id:       "2",
 			Package:  "google.golang.org/grpc",
@@ -80,7 +80,7 @@ func getStockIndicators() []Indicator {
 				{Name: "method"},
 			},
 			IndicatorType: Service,
-			MatchFilter:   "fs/services/frida",
+			MatchFilter:   "",
 		},
 	}
 }

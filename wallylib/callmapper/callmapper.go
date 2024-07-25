@@ -256,7 +256,6 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				if !wallylib.SiteMatchesFunc(e.Site, iterNode.Func) {
 					allMismatchSite = false
 					allAlreadyInPath = false
-					allOutsideFilter = false
 					continue
 				}
 			}
