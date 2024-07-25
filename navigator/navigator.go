@@ -2,6 +2,16 @@ package navigator
 
 import (
 	"fmt"
+	"github.com/hex0punk/wally/checker"
+	"github.com/hex0punk/wally/indicator"
+	"github.com/hex0punk/wally/logger"
+	"github.com/hex0punk/wally/match"
+	"github.com/hex0punk/wally/passes/callermapper"
+	"github.com/hex0punk/wally/passes/cefinder"
+	"github.com/hex0punk/wally/passes/tokenfile"
+	"github.com/hex0punk/wally/reporter"
+	"github.com/hex0punk/wally/wallylib"
+	"github.com/hex0punk/wally/wallylib/callmapper"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -21,16 +31,6 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"wally/checker"
-	"wally/indicator"
-	"wally/logger"
-	"wally/match"
-	"wally/passes/callermapper"
-	"wally/passes/cefinder"
-	"wally/passes/tokenfile"
-	"wally/reporter"
-	"wally/wallylib"
-	"wally/wallylib/callmapper"
 )
 
 type Navigator struct {

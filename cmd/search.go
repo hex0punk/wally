@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/hex0punk/wally/indicator"
+	"github.com/hex0punk/wally/navigator"
+	"github.com/hex0punk/wally/reporter"
+	"github.com/hex0punk/wally/server"
+	"github.com/hex0punk/wally/wallylib/callmapper"
 	"github.com/spf13/cobra"
 	"strings"
-	"wally/indicator"
-	"wally/navigator"
-	"wally/reporter"
-	"wally/server"
-	"wally/wallylib/callmapper"
 )
 
 var (

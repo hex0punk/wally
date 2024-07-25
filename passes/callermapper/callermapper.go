@@ -1,13 +1,13 @@
 package callermapper
 
 import (
+	"github.com/hex0punk/wally/passes/cefinder"
+	match "github.com/hex0punk/wally/wallylib"
 	"go/ast"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"reflect"
-	"wally/passes/cefinder"
-	match "wally/wallylib"
 )
 
 var Analyzer = &analysis.Analyzer{

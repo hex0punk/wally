@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
+	"github.com/hex0punk/wally/match"
 	"log"
 	"os"
 	"strings"
-	"wally/match"
 )
 
 func PrintResults(matches []match.RouteMatch) {

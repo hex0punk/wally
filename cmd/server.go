@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/hex0punk/wally/server"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
-	"wally/server"
 )
 
 var (

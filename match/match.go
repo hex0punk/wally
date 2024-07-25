@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/hex0punk/wally/indicator"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/ssa"
 	"strings"
-	"wally/indicator"
 )
 
 type RouteMatch struct {

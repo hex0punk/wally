@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	"github.com/hex0punk/wally/indicator"
 	"os"
-	"wally/indicator"
 
 	"github.com/spf13/cobra"
 )

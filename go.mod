@@ -1,4 +1,4 @@
-module wally
+module github.com/hex0punk/wally
 
 go 1.22.4
 

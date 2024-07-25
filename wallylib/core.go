@@ -3,6 +3,7 @@ package wallylib
 import (
 	"errors"
 	"fmt"
+	"github.com/hex0punk/wally/indicator"
 	"go/ast"
 	"go/build"
 	"go/types"
@@ -10,7 +11,6 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"strings"
-	"wally/indicator"
 )
 
 type FuncDecl struct {

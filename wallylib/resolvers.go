@@ -3,11 +3,11 @@ package wallylib
 import (
 	"errors"
 	"fmt"
+	"github.com/hex0punk/wally/checker"
+	"github.com/hex0punk/wally/indicator"
 	"go/ast"
 	"go/types"
 	"golang.org/x/tools/go/analysis"
-	"wally/checker"
-	"wally/indicator"
 )
 
 func ResolveParams(params []indicator.RouteParam, sig *types.Signature, ce *ast.CallExpr, pass *analysis.Pass) map[string]string {

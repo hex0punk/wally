@@ -4,12 +4,12 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"github.com/hex0punk/wally/match"
+	"github.com/hex0punk/wally/wallylib"
 	"go/token"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"strings"
-	"wally/match"
-	"wally/wallylib"
 )
 
 type SearchAlgorithm int
