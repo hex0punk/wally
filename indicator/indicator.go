@@ -38,7 +38,7 @@ func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator 
 		indicators = getStockIndicators()
 	}
 
-	if customIndicators != nil && len(customIndicators) > 0 {
+	if len(customIndicators) > 0 {
 		fmt.Println("Loading custom indicator")
 		idStart := len(indicators)
 		for i, ind := range customIndicators {
@@ -60,17 +60,17 @@ func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator 
 
 func getStockIndicators() []Indicator {
 	return []Indicator{
-		{
-			Id:       "1",
-			Package:  "net/http",
-			Type:     "",
-			Function: "Handle",
-			Params: []RouteParam{
-				{Name: "pattern"},
-			},
-			IndicatorType: Service,
-			MatchFilter:   "",
-		},
+		//{
+		//	Id:       "1",
+		//	Package:  "net/http",
+		//	Type:     "",
+		//	Function: "Handle",
+		//	Params: []RouteParam{
+		//		{Name: "pattern"},
+		//	},
+		//	IndicatorType: Service,
+		//	MatchFilter:   "",
+		//},
 		{
 			Id:       "2",
 			Package:  "google.golang.org/grpc",
@@ -80,7 +80,7 @@ func getStockIndicators() []Indicator {
 				{Name: "method"},
 			},
 			IndicatorType: Service,
-			MatchFilter:   "",
+			MatchFilter:   "***REMOVED***",
 		},
 	}
 }

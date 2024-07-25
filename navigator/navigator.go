@@ -161,9 +161,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 		// we want to collect single results here, then run through all at the end.
 		if result != nil {
 			if passIssues, ok := result.([]match.RouteMatch); ok {
-				for _, iss := range passIssues {
-					n.RouteMatches = append(n.RouteMatches, iss)
-				}
+				n.RouteMatches = append(n.RouteMatches, passIssues...)
 			}
 		}
 	}

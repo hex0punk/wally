@@ -8,7 +8,6 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"strings"
-	"sync"
 	"wally/match"
 	"wally/wallylib"
 )
@@ -24,7 +23,6 @@ type CallMapper struct {
 	Options        Options
 	Match          *match.RouteMatch
 	Stop           bool
-	pathMutex      sync.Mutex
 	CallgraphNodes map[*ssa.Function]*callgraph.Node
 }
 

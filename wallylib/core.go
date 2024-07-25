@@ -177,7 +177,7 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 			clause := iclause.(*ast.CaseClause)
 			for _, stm := range clause.Body {
 				bodyExps := GetExprsFromStmt(stm)
-				if bodyExps != nil && len(bodyExps) > 0 {
+				if len(bodyExps) > 0 {
 					result = append(result, bodyExps...)
 				}
 			}
@@ -189,18 +189,18 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 		}
 		if s.Init != nil {
 			initCe := GetExprsFromStmt(s.Init)
-			if initCe != nil && len(initCe) > 0 {
+			if len(initCe) > 0 {
 				result = append(result, initCe...)
 			}
 		}
 		if s.Else != nil {
 			elseCe := GetExprsFromStmt(s.Else)
-			if elseCe != nil && len(elseCe) > 0 {
+			if len(elseCe) > 0 {
 				result = append(result, elseCe...)
 			}
 		}
 		ces := GetExprsFromStmt(s.Body)
-		if ces != nil && len(ces) > 0 {
+		if len(ces) > 0 {
 			result = append(result, ces...)
 		}
 	case *ast.BlockStmt:
@@ -232,12 +232,12 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 		}
 	case *ast.ForStmt:
 		ces := GetExprsFromStmt(s.Body)
-		if ces != nil && len(ces) > 0 {
+		if len(ces) > 0 {
 			result = append(result, ces...)
 		}
 	case *ast.RangeStmt:
 		ces := GetExprsFromStmt(s.Body)
-		if ces != nil && len(ces) > 0 {
+		if len(ces) > 0 {
 			result = append(result, ces...)
 		}
 	case *ast.SelectStmt:
@@ -246,7 +246,7 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 			if cc, ok := clause.(*ast.CommClause); ok {
 				for _, stm := range cc.Body {
 					bodyExps := GetExprsFromStmt(stm)
-					if bodyExps != nil && len(bodyExps) > 0 {
+					if len(bodyExps) > 0 {
 						result = append(result, bodyExps...)
 					}
 				}
@@ -254,7 +254,7 @@ func GetExprsFromStmt(stmt ast.Stmt) []*ast.CallExpr {
 		}
 	case *ast.LabeledStmt:
 		ces := GetExprsFromStmt(s.Stmt)
-		if ces != nil && len(ces) > 0 {
+		if len(ces) > 0 {
 			result = append(result, ces...)
 		}
 	}

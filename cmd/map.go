@@ -43,23 +43,23 @@ var mapCmd = &cobra.Command{
 	Long:  `Get list a list of all routes with resolved values as possible for params, along with enclosing functions"`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if format != "" && format != "json" {
-			return fmt.Errorf("invalid output type: %q\n", format)
+			return fmt.Errorf("invalid output type: %q", format)
 		}
 
 		searchAlg = strings.ToLower(searchAlg)
 		if searchAlg != "bfs" && searchAlg != "dfs" {
-			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s\n", searchAlg)
+			return fmt.Errorf("search agorithm should be either bfs or dfs, got %s", searchAlg)
 		}
 
 		if callgraphAlg != "rta" && callgraphAlg != "cha" && callgraphAlg != "vta" && callgraphAlg != "static" {
-			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s\n", callgraphAlg)
+			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s", callgraphAlg)
 		}
 
 		if limiterMode > 4 {
-			return fmt.Errorf("limiter-mode should not be higher than 4, got %d\n", limiterMode)
+			return fmt.Errorf("limiter-mode should not be higher than 4, got %d", limiterMode)
 		}
 
-		if filter != "" && moduleOnly == true {
+		if filter != "" && moduleOnly {
 			fmt.Printf("You've set module-only to true with a non empty filter (%s). The module filter will only be used as a fallback in the case the that a module cannot be found during analysis. Set module-only to false if that is not the behavior you want\n", filter)
 		}
 

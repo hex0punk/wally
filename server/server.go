@@ -27,7 +27,6 @@ func setupHandlers() {
 
 func jsonHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonFile)
-	return
 }
 
 func ServerCosmograph(file []byte, port int) {
@@ -40,7 +39,7 @@ func ServerCosmograph(file []byte, port int) {
 	}
 	portStr := strconv.Itoa(port)
 
-	fmt.Println(fmt.Sprintf("Wally server running on http://localhost:%s", portStr))
+	fmt.Printf("Wally server running on http://localhost:%s", portStr)
 
 	err := http.ListenAndServe(fmt.Sprintf(":%s", portStr), nil)
 	if err != nil {

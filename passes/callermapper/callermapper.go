@@ -32,7 +32,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			// Go over the body of the function and get a map of all call expressions for later use
 			if fd.Body != nil && fd.Body.List != nil {
 				for _, b := range fd.Body.List {
-					if ce := match.GetExprsFromStmt(b); ce != nil && len(ce) > 0 {
+					if ce := match.GetExprsFromStmt(b); len(ce) > 0 {
 						cf.CE[fd] = append(cf.CE[fd], ce...)
 					}
 				}
@@ -46,7 +46,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		if gd.Body != nil && gd.Body.List != nil {
 			for _, b := range gd.Body.List {
-				if ce := match.GetExprsFromStmt(b); ce != nil && len(ce) > 0 {
+				if ce := match.GetExprsFromStmt(b); len(ce) > 0 {
 					cf.CE[gd] = append(cf.CE[gd], ce...)
 				}
 			}

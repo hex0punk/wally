@@ -53,7 +53,7 @@ func GetParamPos(sig *types.Signature, paramName string) (int, error) {
 		}
 	}
 	// TODO: not great to return 0
-	return 0, errors.New("Unable to find param pos")
+	return 0, errors.New("unable to find param pos")
 }
 
 func GetValueFromExp(exp ast.Expr, pass *analysis.Pass) string {
@@ -143,6 +143,5 @@ func ResolvePackageFromIdent(expr ast.Expr, info *types.Info) (*types.Package, e
 		return o1.Pkg(), nil
 	}
 
-	errStr := fmt.Sprintf("unable to get package name from Ident")
-	return nil, errors.New(errStr)
+	return nil, errors.New("unable to get package name from Ident")
 }
