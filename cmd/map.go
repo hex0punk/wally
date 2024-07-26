@@ -72,7 +72,7 @@ func init() {
 	rootCmd.AddCommand(mapCmd)
 
 	mapCmd.PersistentFlags().BoolVar(&skipDefault, "skip-default", false, "whether to skip the default indicators")
-	mapCmd.PersistentFlags().IntVar(&limiterMode, "limiter-mode", 3, "Logic level to limit callgraph algorithm sporious nodes")
+	mapCmd.PersistentFlags().IntVar(&limiterMode, "limiter-mode", 4, "Logic level to limit callgraph algorithm sporious nodes")
 	mapCmd.PersistentFlags().StringVarP(&config, "config", "c", "", "path for config file containing indicators")
 	mapCmd.PersistentFlags().StringVar(&callgraphAlg, "callgraph-alg", "cha", "cha || rta || vta")
 	mapCmd.PersistentFlags().BoolVar(&skipClosures, "skip-closures", false, "Skip closure edges which can lead to innacurate results")
