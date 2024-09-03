@@ -12,10 +12,10 @@ import (
 )
 
 var (
-	pkg         string
-	function    string
-	recvType    string
-	matchFilter string
+	pkg          string
+	function     string
+	recvType     string
+	matchFilters []string
 )
 
 // funcCmd represents the map command
@@ -55,7 +55,7 @@ func init() {
 	funcCmd.PersistentFlags().StringVar(&pkg, "pkg", "", "Package name")
 	funcCmd.PersistentFlags().StringVar(&function, "func", "", "Function name")
 	funcCmd.PersistentFlags().StringVar(&recvType, "recv-type", "", "receiver type name (excluding package)")
-	funcCmd.PersistentFlags().StringVar(&matchFilter, "match-filter", "", "Package prefix used for filtering the selected function call matches")
+	funcCmd.PersistentFlags().StringSliceVar(&matchFilters, "match-filter", []string{}, "Package prefix used for filtering the selected function call matches")
 	funcCmd.MarkPersistentFlagRequired("pkg")
 	funcCmd.MarkPersistentFlagRequired("func")
 }
@@ -63,14 +63,18 @@ func init() {
 func searchFunc(cmd *cobra.Command, args []string) {
 	indicators := indicator.InitIndicators(
 		[]indicator.Indicator{
-			indicator.Indicator{
+			{
 				Package:      pkg,
 				Function:     function,
 				ReceiverType: recvType,
-				MatchFilter:  matchFilter,
+				MatchFilters: matchFilters,
 			},
 		}, true,
 	)
+
+	for _, mf := range indicators[0].MatchFilters {
+		fmt.Println("match filter: ", mf)
+	}
 
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = true

@@ -40,6 +40,7 @@ type SSAContext struct {
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
 	var match *indicator.Indicator
+	
 	for _, ind := range indicators {
 		ind := ind
 
@@ -58,10 +59,17 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 			}
 		}
 
-		if ind.MatchFilter != "" && fi.EnclosedBy.Pkg != nil {
-			if !strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), ind.MatchFilter) {
-				continue
+		filterMatch := false
+		for _, mf := range ind.MatchFilters {
+			if mf != "" && fi.EnclosedBy.Pkg != nil {
+				if strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), mf) {
+					filterMatch = true
+					continue
+				}
 			}
+		}
+		if !filterMatch {
+			continue
 		}
 
 		match = &ind
