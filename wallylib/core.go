@@ -40,7 +40,7 @@ type SSAContext struct {
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
 	var match *indicator.Indicator
-	
+
 	for _, ind := range indicators {
 		ind := ind
 

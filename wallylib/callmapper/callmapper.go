@@ -67,6 +67,7 @@ type Options struct {
 	Limiter      LimiterMode
 	SkipClosures bool
 	ModuleOnly   bool
+	SkipLine     bool
 }
 
 func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.Node, options Options) *CallMapper {
@@ -83,9 +84,14 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 
 func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
-	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
+	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos(), cm.Options.SkipLine)
 	//encStr := cm.getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc, s)
 	encStr := cm.getNodeString(encBasePos, s)
+
+	if cm.Options.SkipLine {
+		cm.Match.SSA.TargetPos = encStr
+		return []string{}
+	}
 
 	// TODO: No real reason for this to be here
 	siteStr := ""
@@ -93,7 +99,7 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 		encStr = cm.Match.Pos.String()
 	} else {
 		sitePkg := cm.Match.SSA.SSAInstruction.Parent().Pkg
-		siteBasePos := wallylib.GetFormattedPos(sitePkg, cm.Match.SSA.SSAInstruction.Pos())
+		siteBasePos := wallylib.GetFormattedPos(sitePkg, cm.Match.SSA.SSAInstruction.Pos(), false)
 		if cm.Match.SSA.SSAFunc == nil {
 			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
 		} else {
@@ -302,7 +308,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	// Insert whataver is left by now
 	for e := queue.Front(); e != nil; e = e.Next() {
 		bfsNode := e.Value.(BFSNode)
-		paths.InsertPaths(bfsNode.Path, false, false)
+		paths.InsertPaths(bfsNode.Path, true, false)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
 }
@@ -384,7 +390,7 @@ func passesFilter(node *callgraph.Node, filter string) bool {
 }
 
 func callerInPath(e *callgraph.Edge, paths []string) bool {
-	fp := wallylib.GetFormattedPos(e.Caller.Func.Package(), e.Site.Pos())
+	fp := wallylib.GetFormattedPos(e.Caller.Func.Package(), e.Site.Pos(), false)
 	for _, p := range paths {
 		if strings.Contains(p, fp) {
 			return true
@@ -403,9 +409,10 @@ func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, site ss
 		return append(path, s.String())
 	}
 
-	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
+	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos(), cm.Options.SkipLine)
 
 	nodeDescription := cm.getNodeString(fp, s)
+	fmt.Println("thisisit ", nodeDescription)
 
 	return append(path, nodeDescription)
 }
@@ -470,7 +477,7 @@ func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []string) 
 	if isClosure(node.Func) {
 		node = cm.CallgraphNodes[node.Func.Parent()]
 		for isClosure(node.Func) {
-			newPath = append(newPath, fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos())))
+			newPath = append(newPath, fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos(), cm.Options.SkipLine)))
 			node = cm.CallgraphNodes[node.Func.Parent()]
 		}
 	}

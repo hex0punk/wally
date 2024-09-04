@@ -51,10 +51,15 @@ func IsLocal(obj types.Object) bool {
 	return depth >= 4
 }
 
-func GetFormattedPos(pkg *ssa.Package, pos token.Pos) string {
+func GetFormattedPos(pkg *ssa.Package, pos token.Pos, skipLine bool) string {
 	fs := pkg.Prog.Fset
 	p := fs.Position(pos)
 	currentPath, _ := os.Getwd()
 	relPath, _ := filepath.Rel(currentPath, p.Filename)
+	if skipLine {
+		fmt.Println("eskiping ", relPath)
+		return fmt.Sprintf("%s", relPath)
+	}
+	fmt.Println("noooot eskiping ", relPath)
 	return fmt.Sprintf("%s:%d:%d", relPath, p.Line, p.Column)
 }
