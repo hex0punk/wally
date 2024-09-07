@@ -16,7 +16,7 @@ var (
 	function     string
 	recvType     string
 	matchFilters []string
-	skipLine     bool
+	simplify     bool
 )
 
 // funcCmd represents the map command
@@ -57,7 +57,7 @@ func init() {
 	funcCmd.PersistentFlags().StringVar(&function, "func", "", "Function name")
 	funcCmd.PersistentFlags().StringVar(&recvType, "recv-type", "", "receiver type name (excluding package)")
 	funcCmd.PersistentFlags().StringSliceVar(&matchFilters, "match-filter", []string{}, "Package prefix used for filtering the selected function call matches")
-	funcCmd.PersistentFlags().BoolVar(&skipLine, "skip-line", false, "Skip line")
+	funcCmd.PersistentFlags().BoolVar(&simplify, "skip-line", false, "Skip line")
 	funcCmd.MarkPersistentFlagRequired("pkg")
 	funcCmd.MarkPersistentFlagRequired("func")
 }
@@ -74,10 +74,6 @@ func searchFunc(cmd *cobra.Command, args []string) {
 		}, true,
 	)
 
-	for _, mf := range indicators[0].MatchFilters {
-		fmt.Println("match filter: ", mf)
-	}
-
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = true
 	nav.CallgraphAlg = callgraphAlg
@@ -91,7 +87,7 @@ func searchFunc(cmd *cobra.Command, args []string) {
 		SearchAlg:    callmapper.SearchAlgs[searchAlg],
 		SkipClosures: skipClosures,
 		ModuleOnly:   moduleOnly,
-		SkipLine:     skipLine,
+		Simplify:     simplify,
 	}
 
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))

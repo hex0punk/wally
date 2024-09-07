@@ -68,7 +68,7 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 				}
 			}
 		}
-		if !filterMatch {
+		if !filterMatch && len(ind.MatchFilters) > 0 {
 			continue
 		}
 

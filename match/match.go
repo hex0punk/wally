@@ -58,7 +58,18 @@ type Node struct {
 	Func       *ssa.Function
 }
 
-func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited bool) {
+func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited bool, simplify bool) {
+	// Simplified output can result in duplicates,
+	// as there can be multiple call sites inside the same enclosing function
+	if simplify {
+		for _, existingPath := range cp.Paths {
+			fmt.Println("Duplicate deleted")
+			if isSamePath(existingPath, nodes) {
+				return
+			}
+		}
+	}
+
 	callPath := CallPath{NodeLimited: nodeLimited, FilterLimited: filterLimited}
 
 	for _, node := range nodes {
@@ -68,7 +79,22 @@ func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited
 			callPath.Recoverable = true
 		}
 	}
+
 	cp.Paths = append(cp.Paths, &callPath)
+}
+
+func isSamePath(callPath *CallPath, nodes []string) bool {
+	if len(callPath.Nodes) != len(nodes) {
+		return false
+	}
+
+	for i, existingPath := range callPath.Nodes {
+		if existingPath.NodeString != nodes[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (cp *CallPaths) Print() {
