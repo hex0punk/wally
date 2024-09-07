@@ -74,6 +74,7 @@ func searchFunc(cmd *cobra.Command, args []string) {
 		}, true,
 	)
 
+	fmt.Println(len(matchFilters))
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = true
 	nav.CallgraphAlg = callgraphAlg

@@ -60,16 +60,18 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 		}
 
 		filterMatch := false
-		for _, mf := range ind.MatchFilters {
-			if mf != "" && fi.EnclosedBy.Pkg != nil {
-				if strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), mf) {
-					filterMatch = true
-					continue
+		if len(ind.MatchFilters) > 0 {
+			for _, mf := range ind.MatchFilters {
+				if mf != "" && fi.EnclosedBy.Pkg != nil {
+					if strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), mf) {
+						filterMatch = true
+						break
+					}
 				}
 			}
-		}
-		if !filterMatch && len(ind.MatchFilters) > 0 {
-			continue
+			if !filterMatch {
+				continue
+			}
 		}
 
 		match = &ind

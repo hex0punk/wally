@@ -252,7 +252,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				continue
 			}
 			// Do we care about this node, or is it in the path already (if it calls itself)?
-			if callerInPath(e, newPath) {
+			if cm.callerInPath(e, newPath) {
 				continue
 			}
 			if cm.Options.Limiter >= VeryStrict {
@@ -308,7 +308,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 	// Insert whataver is left by now
 	for e := queue.Front(); e != nil; e = e.Next() {
 		bfsNode := e.Value.(BFSNode)
-		paths.InsertPaths(bfsNode.Path, true, false, cm.Options.Simplify)
+		paths.InsertPaths(bfsNode.Path, false, false, cm.Options.Simplify)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
 }
@@ -389,10 +389,11 @@ func passesFilter(node *callgraph.Node, filter string) bool {
 	return false
 }
 
-func callerInPath(e *callgraph.Edge, paths []string) bool {
-	fp := wallylib.GetFormattedPos(e.Caller.Func.Package(), e.Site.Pos(), true)
+func (cm *CallMapper) callerInPath(e *callgraph.Edge, paths []string) bool {
+	fp := wallylib.GetFormattedPos(e.Caller.Func.Package(), e.Site.Pos(), cm.Options.Simplify)
+	ns := cm.getNodeString(fp, e.Caller)
 	for _, p := range paths {
-		if strings.Contains(p, fp) {
+		if ns == p {
 			return true
 		}
 	}
@@ -490,11 +491,6 @@ func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []string) 
 	}
 
 	return node, newPath
-}
-
-func (cm *CallMapper) insertPaths() {
-	//if cm.Options.
-	//paths.InsertPaths(newPath, false, true)
 }
 
 func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
