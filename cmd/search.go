@@ -16,7 +16,6 @@ var (
 	function     string
 	recvType     string
 	matchFilters []string
-	simplify     bool
 )
 
 // funcCmd represents the map command
@@ -57,7 +56,6 @@ func init() {
 	funcCmd.PersistentFlags().StringVar(&function, "func", "", "Function name")
 	funcCmd.PersistentFlags().StringVar(&recvType, "recv-type", "", "receiver type name (excluding package)")
 	funcCmd.PersistentFlags().StringSliceVar(&matchFilters, "match-filter", []string{}, "Package prefix used for filtering the selected function call matches")
-	funcCmd.PersistentFlags().BoolVar(&simplify, "skip-line", false, "Skip line")
 	funcCmd.MarkPersistentFlagRequired("pkg")
 	funcCmd.MarkPersistentFlagRequired("func")
 }

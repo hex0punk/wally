@@ -34,6 +34,7 @@ var (
 	callgraphAlg string
 	skipClosures bool
 	moduleOnly   bool
+	simplify     bool
 )
 
 // mapCmd represents the map command
@@ -77,6 +78,7 @@ func init() {
 	mapCmd.PersistentFlags().StringVar(&callgraphAlg, "callgraph-alg", "cha", "cha || rta || vta")
 	mapCmd.PersistentFlags().BoolVar(&skipClosures, "skip-closures", false, "Skip closure edges which can lead to innacurate results")
 	mapCmd.PersistentFlags().BoolVar(&moduleOnly, "module-only", true, "Filter call paths by the match module.")
+	mapCmd.PersistentFlags().BoolVarP(&simplify, "simple", "s", false, "Simple output focuses on function signatures rather than sites")
 
 	mapCmd.PersistentFlags().StringSliceVarP(&paths, "paths", "p", paths, "The comma separated package paths to target. Use ./.. for current directory and subdirectories")
 	mapCmd.PersistentFlags().StringVarP(&graph, "graph", "g", "", "Path for optional PNG graph output. Only works with --ssa")
@@ -119,6 +121,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 			Limiter:      callmapper.LimiterMode(limiterMode),
 			SkipClosures: skipClosures,
 			ModuleOnly:   moduleOnly,
+			Simplify:     simplify,
 		}
 		nav.Logger.Info("Solving call paths for matches", "matches", len(nav.RouteMatches))
 		nav.SolveCallPaths(mapperOptions)
