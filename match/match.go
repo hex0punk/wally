@@ -63,7 +63,6 @@ func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited
 	// as there can be multiple call sites inside the same enclosing function
 	if simplify {
 		for _, existingPath := range cp.Paths {
-			fmt.Println("Duplicate deleted")
 			if isSamePath(existingPath, nodes) {
 				return
 			}

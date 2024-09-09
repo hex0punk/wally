@@ -279,6 +279,12 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 			}
 		}
 
+		if funcMatch.EnclosedBy == "" {
+			if decl := callMapper.EnclosingFunc(ce); decl != nil {
+				funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
+			}
+		}
+
 		results = append(results, funcMatch)
 	})
 
