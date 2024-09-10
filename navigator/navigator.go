@@ -31,6 +31,9 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
+	"time"
 )
 
 type Navigator struct {
@@ -41,6 +44,12 @@ type Navigator struct {
 	RunSSA          bool
 	Packages        []*packages.Package
 	CallgraphAlg    string
+	Exclusions      Exclusions
+}
+
+type Exclusions struct {
+	Packages    []string
+	PosSuffixes []string
 }
 
 type SSA struct {
@@ -233,7 +242,17 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		if decl := callMapper.EnclosingFunc(ce); decl != nil {
+		// Get the position of the function in code
+		pos := pass.Fset.Position(funExpr.Pos())
+		funcInfo.Pos = pos
+
+		if !n.PassesExclusions(funcInfo) {
+			return
+		}
+
+		// This will be used for funcInfo.Match
+		decl := callMapper.EnclosingFunc(ce)
+		if decl != nil {
 			funcInfo.EnclosedBy = &wallylib.FuncDecl{
 				Pkg:  pass.Pkg,
 				Decl: decl,
@@ -245,9 +264,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 			// Don't keep going deeper in the node if there are no matches by now?
 			return
 		}
-
-		// Get the position of the function in code
-		pos := pass.Fset.Position(funExpr.Pos())
 
 		// Whether we are able to get params or not we have a match
 		funcMatch := match.NewRouteMatch(*route, pos)
@@ -280,7 +296,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		if funcMatch.EnclosedBy == "" {
-			if decl := callMapper.EnclosingFunc(ce); decl != nil {
+			if decl != nil {
 				funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
 			}
 		}
@@ -305,8 +321,26 @@ func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, e
 	return nil
 }
 
-func (n *Navigator) isMatchingCall(call ssa.CallInstruction, expr *ast.CallExpr) bool {
+func (n *Navigator) PassesExclusions(funcInfo *wallylib.FuncInfo) bool {
+	if len(n.Exclusions.Packages) == 0 && len(n.Exclusions.PosSuffixes) == 0 {
+		return true
+	}
 
+	for _, pkg := range n.Exclusions.Packages {
+		if funcInfo.Package == pkg {
+			return false
+		}
+	}
+
+	for _, exc := range n.Exclusions.PosSuffixes {
+		if strings.HasSuffix(funcInfo.Pos.String(), exc) {
+			return false
+		}
+	}
+	return true
+}
+
+func (n *Navigator) isMatchingCall(call ssa.CallInstruction, expr *ast.CallExpr) bool {
 	var cp token.Pos
 	if call.Value() == nil {
 		cp = call.Common().Value.Pos()
@@ -368,20 +402,35 @@ func (n *Navigator) SolvePathsSlow() {
 }
 
 func (n *Navigator) SolveCallPaths(options callmapper.Options) {
+	var wg sync.WaitGroup
+
 	for i, routeMatch := range n.RouteMatches {
 		i, routeMatch := i, routeMatch
+
 		if n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc] == nil {
 			continue
 		}
-		cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
-		n.Logger.Debug("Solving paths for match", "match", routeMatch.Pos.String())
-		if options.SearchAlg == callmapper.Dfs {
-			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
-		} else {
-			n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
-		}
-		n.Logger.Debug("Solved paths for match", "match", routeMatch.Pos.String(), "numPaths", len(n.RouteMatches[i].SSA.CallPaths.Paths))
+
+		wg.Add(1)
+		go func(i int, options callmapper.Options, routeMatch match.RouteMatch) {
+			defer wg.Done()
+			cm := callmapper.NewCallMapper(&routeMatch, n.SSA.Callgraph.Nodes, options)
+
+			start := time.Now()
+			n.Logger.Debug("Solving paths for match", "match", routeMatch.Pos.String())
+
+			if options.SearchAlg == callmapper.Dfs {
+				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
+			} else {
+				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
+			}
+
+			duration := time.Since(start)
+			n.Logger.Debug("Solved paths for match", "match", routeMatch.Pos.String(), "numPaths", len(n.RouteMatches[i].SSA.CallPaths.Paths), "duration", duration)
+		}(i, options, routeMatch)
 	}
+
+	wg.Wait()
 }
 
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {

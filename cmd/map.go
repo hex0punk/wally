@@ -18,23 +18,25 @@ var (
 	config      string
 	wallyConfig WallyConfig
 
-	paths        []string
-	runSSA       bool
-	filter       string
-	graph        string
-	maxFuncs     int
-	maxPaths     int
-	printNodes   bool
-	format       string
-	outputFile   string
-	serverGraph  bool
-	skipDefault  bool
-	limiterMode  int
-	searchAlg    string
-	callgraphAlg string
-	skipClosures bool
-	moduleOnly   bool
-	simplify     bool
+	paths              []string
+	runSSA             bool
+	filter             string
+	graph              string
+	maxFuncs           int
+	maxPaths           int
+	printNodes         bool
+	format             string
+	outputFile         string
+	serverGraph        bool
+	skipDefault        bool
+	limiterMode        int
+	searchAlg          string
+	callgraphAlg       string
+	skipClosures       bool
+	moduleOnly         bool
+	simplify           bool
+	excludePkgs        []string
+	excluseByPosSuffix []string
 )
 
 // mapCmd represents the map command
@@ -91,6 +93,9 @@ func init() {
 	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json, csv")
 	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")
 
+	mapCmd.PersistentFlags().StringSliceVar(&excludePkgs, "exclude-pkg", []string{}, "Exclude packages")
+	mapCmd.PersistentFlags().StringSliceVar(&excluseByPosSuffix, "exclude-pos", []string{}, "Package prefix used for filtering the selected function call matches")
+
 	mapCmd.PersistentFlags().BoolVar(&serverGraph, "server", false, "Starts a server on port 1984 with output graph")
 }
 
@@ -101,6 +106,10 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = runSSA
 	nav.CallgraphAlg = callgraphAlg
+	nav.Exclusions = navigator.Exclusions{
+		Packages:    excludePkgs,
+		PosSuffixes: excluseByPosSuffix,
+	}
 
 	nav.Logger.Info("Running mapper", "indicators", len(indicators))
 

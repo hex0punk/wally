@@ -6,6 +6,7 @@ import (
 	"github.com/hex0punk/wally/indicator"
 	"go/ast"
 	"go/build"
+	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/packages"
@@ -30,6 +31,7 @@ type FuncInfo struct {
 	Route      string
 	Signature  *types.Signature
 	EnclosedBy *FuncDecl
+	Pos        token.Position
 }
 
 type SSAContext struct {
