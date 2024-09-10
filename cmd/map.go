@@ -93,8 +93,8 @@ func init() {
 	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json, csv")
 	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")
 
-	mapCmd.PersistentFlags().StringSliceVar(&excludePkgs, "exclude-pkg", []string{}, "Exclude packages")
-	mapCmd.PersistentFlags().StringSliceVar(&excluseByPosSuffix, "exclude-pos", []string{}, "Package prefix used for filtering the selected function call matches")
+	mapCmd.PersistentFlags().StringSliceVar(&excludePkgs, "exclude-pkg", []string{}, "Comma separated list of packages to exclude")
+	mapCmd.PersistentFlags().StringSliceVar(&excluseByPosSuffix, "exclude-pos", []string{}, "Comma separated list of position prefixes used for filtering the selected function call matches")
 
 	mapCmd.PersistentFlags().BoolVar(&serverGraph, "server", false, "Starts a server on port 1984 with output graph")
 }
