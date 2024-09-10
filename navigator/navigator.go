@@ -244,9 +244,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 		// Get the position of the function in code
 		pos := pass.Fset.Position(funExpr.Pos())
-		funcInfo.Pos = pos
-
-		if !n.PassesExclusions(funcInfo) {
+		if !n.PassesExclusions(pos, funcInfo.Package) {
 			return
 		}
 
@@ -321,19 +319,19 @@ func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, e
 	return nil
 }
 
-func (n *Navigator) PassesExclusions(funcInfo *wallylib.FuncInfo) bool {
+func (n *Navigator) PassesExclusions(pos token.Position, pkg string) bool {
 	if len(n.Exclusions.Packages) == 0 && len(n.Exclusions.PosSuffixes) == 0 {
 		return true
 	}
 
 	for _, pkg := range n.Exclusions.Packages {
-		if funcInfo.Package == pkg {
+		if pkg == pkg {
 			return false
 		}
 	}
 
 	for _, exc := range n.Exclusions.PosSuffixes {
-		if strings.HasSuffix(funcInfo.Pos.String(), exc) {
+		if strings.HasSuffix(pos.String(), exc) {
 			return false
 		}
 	}
