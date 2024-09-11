@@ -314,6 +314,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 }
 
 // closureArgumentOf checks if the function is passed as an argument to another function
+// and returns the enclosing function
 func closureArgumentOf(targetNode *callgraph.Node, edges *callgraph.Node) *ssa.Function {
 	for _, edge := range edges.Out {
 		for _, arg := range edge.Site.Common().Args {
