@@ -33,8 +33,14 @@ var SearchAlgs = map[string]SearchAlgorithm{
 
 // TODO: this should be path of the callpath structs in match pkg
 type BFSNode struct {
-	Node *callgraph.Node
-	Path []string
+	Node    *callgraph.Node
+	BFSPath []WallyNode
+	//Path []string
+}
+
+type WallyNode struct {
+	NodeString string
+	Caller     *callgraph.Node
 }
 
 type LimiterMode int
@@ -82,14 +88,14 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 	}
 }
 
-func (cm *CallMapper) initPath(s *callgraph.Node) []string {
+func (cm *CallMapper) initPath(s *callgraph.Node) []WallyNode {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos(), cm.Options.Simplify)
 	encStr := cm.getNodeString(encBasePos, s)
 
 	if cm.Options.Simplify {
 		cm.Match.SSA.TargetPos = encStr
-		return []string{}
+		return []WallyNode{}
 	}
 
 	// TODO: No real reason for this to be here
@@ -110,8 +116,8 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 		cm.Match.SSA.TargetPos = siteStr
 	}
 
-	initialPath := []string{
-		encStr,
+	initialPath := []WallyNode{
+		{NodeString: encStr, Caller: s},
 	}
 	return initialPath
 }
@@ -203,7 +209,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 
 func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *match.CallPaths) {
 	queue := list.New()
-	queue.PushBack(BFSNode{Node: start, Path: initialPath})
+	queue.PushBack(BFSNode{Node: start, BFSPath: []WallyNode{}})
 
 	pathLimited := false
 	for queue.Len() > 0 {
@@ -402,18 +408,33 @@ func (cm *CallMapper) callerInPath(e *callgraph.Edge, paths []string) bool {
 }
 
 func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, site ssa.CallInstruction) []string {
-	if site == nil {
-		return path
-		//return append(path, fmt.Sprintf("Func: %s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
-	}
-
-	if cm.Options.Simplify && isClosure(s.Func) {
+	if isClosure(s.Func) {
 		node := cm.CallgraphNodes[s.Func.Parent()]
 		for isClosure(node.Func) {
 			node = cm.CallgraphNodes[node.Func.Parent()]
 		}
 		s = node
 	}
+
+	if site == nil {
+		//return path
+		return append(path, fmt.Sprintf("Func: %s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos(), false)))
+	}
+
+	//if cm.Options.Simplify && isClosure(s.Func) {
+	//	node := cm.CallgraphNodes[s.Func.Parent()]
+	//	for isClosure(node.Func) {
+	//		node = cm.CallgraphNodes[node.Func.Parent()]
+	//	}
+	//	s = node
+	//}
+	//if isClosure(s.Func) {
+	//	node := cm.CallgraphNodes[s.Func.Parent()]
+	//	for isClosure(node.Func) {
+	//		node = cm.CallgraphNodes[node.Func.Parent()]
+	//	}
+	//	s = node
+	//}
 
 	if cm.Options.PrintNodes || s.Func.Package() == nil {
 		return append(path, s.String())

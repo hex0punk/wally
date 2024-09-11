@@ -72,6 +72,9 @@ func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited
 	callPath := CallPath{NodeLimited: nodeLimited, FilterLimited: filterLimited}
 
 	for _, node := range nodes {
+		if !strings.HasPrefix(node, "Func:") {
+			continue
+		}
 		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node})
 		// Temp hack while we replace nodes with a structure containing parts of a path (func, pkg, etc.)
 		if strings.Contains(node, "(recoverable)") {
