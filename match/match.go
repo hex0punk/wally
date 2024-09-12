@@ -38,24 +38,10 @@ type CallPaths struct {
 
 type CallPath struct {
 	ID            int
-	Nodes         []*Node
+	Nodes         []wallynode.WallyNode
 	NodeLimited   bool
 	FilterLimited bool
 	Recoverable   bool
-}
-
-type NodeType int
-
-const (
-	Site NodeType = iota
-	Function
-)
-
-type Node struct {
-	NodeType   NodeType
-	NodeString string
-	Pkg        *ssa.Package
-	Func       *ssa.Function
 }
 
 func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, filterLimited bool, simplify bool) {
@@ -75,9 +61,9 @@ func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, 
 		if simplify && node.Site != nil {
 			continue
 		}
-		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node.NodeString})
+		callPath.Nodes = append(callPath.Nodes, node)
 		// Temp hack while we replace nodes with a structure containing parts of a path (func, pkg, etc.)
-		if node.Recoverable {
+		if node.IsRecoverable() {
 			callPath.Recoverable = true
 		}
 	}

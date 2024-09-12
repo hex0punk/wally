@@ -24,6 +24,7 @@ type CallMapper struct {
 	Match          *match.RouteMatch
 	Stop           bool
 	CallgraphNodes map[*ssa.Function]*callgraph.Node
+	NodeFactory    *wallynode.WallyNodeFactory
 }
 
 var SearchAlgs = map[string]SearchAlgorithm{
@@ -75,17 +76,19 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 	if options.ModuleOnly && match.Module != "" {
 		options.Filter = match.Module
 	}
+	nodeFactory := wallynode.NewWallyNodeFactory(nodes)
 	return &CallMapper{
 		Options:        options,
 		Match:          match,
 		CallgraphNodes: nodes,
+		NodeFactory:    nodeFactory,
 	}
 }
 
 func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
-	rec := wallynode.IsRecoverable(s, cm.CallgraphNodes)
+	rec := cm.NodeFactory.IsRecoverable(s)
 	encStr := wallynode.GetNodeString(encBasePos, s, rec)
 
 	if cm.Options.Simplify {
@@ -106,7 +109,7 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
 		} else {
 			targetFuncNode := cm.CallgraphNodes[cm.Match.SSA.SSAFunc]
-			isRec := wallynode.IsRecoverable(targetFuncNode, cm.CallgraphNodes)
+			isRec := cm.NodeFactory.IsRecoverable(targetFuncNode)
 			siteStr = wallynode.GetNodeString(siteBasePos, targetFuncNode, isRec)
 		}
 		cm.Match.SSA.TargetPos = siteStr
@@ -399,7 +402,7 @@ func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []wallynod
 		for wallylib.IsClosure(node.Func) {
 			if !cm.Options.Simplify {
 				str := fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos()))
-				newPath = append(newPath, wallynode.NewWallyNode(str, node, nil, cm.CallgraphNodes))
+				newPath = append(newPath, cm.NodeFactory.CreateWallyNode(str, node, nil))
 				//str := fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos()))
 				//newPath = append(newPath, wallynode.WallyNode{
 				//	NodeString: str,
@@ -416,14 +419,14 @@ func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []wallynod
 func (cm *CallMapper) buildWallyNode(s *callgraph.Node, site ssa.CallInstruction) wallynode.WallyNode {
 	if site == nil && cm.Options.Simplify {
 		s = cm.getClosureRootNode(s)
-		return wallynode.NewWallyNode("", s, site, cm.CallgraphNodes)
+		return cm.NodeFactory.CreateWallyNode("", s, site)
 	}
 
 	if cm.Options.PrintNodes || s.Func.Package() == nil {
-		return wallynode.NewWallyNode(s.String(), s, site, cm.CallgraphNodes)
+		return cm.NodeFactory.CreateWallyNode(s.String(), s, site)
 	}
 
-	return wallynode.NewWallyNode("", s, site, cm.CallgraphNodes)
+	return cm.NodeFactory.CreateWallyNode("", s, site)
 }
 
 func (cm *CallMapper) getClosureRootNode(s *callgraph.Node) *callgraph.Node {
