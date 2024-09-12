@@ -277,8 +277,9 @@ At its core, Wally uses various algorithms available via the [golang.org/x/tools
 Using `-s` or `--simple` tells wally to only focus not on call sites but instead the relation between functions. In this mode, wally does the following:
 
 - It constructs paths not based on call sites but on containing functions.
-- Skips line numbers to avoid, for instance, paths within a single enclosing function. In the future we will include the position for the enclosing function.
-- Skips most closures, focusing instead on the enclosing functions
+- It skips call sites
+- Skips closures, focusing instead on the enclosing functions
+- Removes duplicates, as this kinda of analysis would result in duplicated results otherwise
 
 This allows you to get a higher level view of the relation between packages, functions, etc. in your code.
 
