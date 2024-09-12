@@ -64,7 +64,6 @@ func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, 
 	if simplify {
 		for _, existingPath := range cp.Paths {
 			if isSamePath(existingPath, nodes) {
-
 				return
 			}
 		}

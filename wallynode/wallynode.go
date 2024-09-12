@@ -23,7 +23,7 @@ func NewWallyNode(nodeStr string, caller *callgraph.Node, site ssa.CallInstructi
 		} else {
 			fp := wallylib.GetFormattedPos(caller.Func.Package(), site.Pos())
 			recoverable = IsRecoverable(caller, connectedNodes)
-			nodeStr = getNodeString(fp, caller, recoverable)
+			nodeStr = GetNodeString(fp, caller, recoverable)
 		}
 	}
 	return WallyNode{
@@ -34,7 +34,7 @@ func NewWallyNode(nodeStr string, caller *callgraph.Node, site ssa.CallInstructi
 	}
 }
 
-func getNodeString(basePos string, s *callgraph.Node, recoverable bool) string {
+func GetNodeString(basePos string, s *callgraph.Node, recoverable bool) string {
 	pkg := s.Func.Package()
 	function := s.Func
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
