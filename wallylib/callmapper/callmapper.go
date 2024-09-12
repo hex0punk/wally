@@ -88,7 +88,7 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
-	rec := cm.NodeFactory.IsRecoverable(s)
+	rec := wallynode.IsRecoverable(s, cm.CallgraphNodes)
 	encStr := wallynode.GetNodeString(encBasePos, s, rec)
 
 	if cm.Options.Simplify {
@@ -109,7 +109,7 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
 		} else {
 			targetFuncNode := cm.CallgraphNodes[cm.Match.SSA.SSAFunc]
-			isRec := cm.NodeFactory.IsRecoverable(targetFuncNode)
+			isRec := wallynode.IsRecoverable(targetFuncNode, cm.CallgraphNodes)
 			siteStr = wallynode.GetNodeString(siteBasePos, targetFuncNode, isRec)
 		}
 		cm.Match.SSA.TargetPos = siteStr
