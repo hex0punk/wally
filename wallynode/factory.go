@@ -24,7 +24,7 @@ func (f *WallyNodeFactory) CreateWallyNode(nodeStr string, caller *callgraph.Nod
 			nodeStr = fmt.Sprintf("Func: %s.[%s] %s", caller.Func.Pkg.Pkg.Name(), caller.Func.Name(), wallylib.GetFormattedPos(caller.Func.Package(), caller.Func.Pos()))
 		} else {
 			fp := wallylib.GetFormattedPos(caller.Func.Package(), site.Pos())
-			recoverable = f.IsRecoverable(caller)
+			recoverable = IsRecoverable(caller, f.CallgraphNodes)
 			nodeStr = GetNodeString(fp, caller, recoverable)
 		}
 	}
@@ -34,34 +34,4 @@ func (f *WallyNodeFactory) CreateWallyNode(nodeStr string, caller *callgraph.Nod
 		Site:        site,
 		recoverable: recoverable,
 	}
-}
-
-func (f *WallyNodeFactory) IsRecoverable(s *callgraph.Node) bool {
-	function := s.Func
-	if function.Recover != nil {
-		rec, err := findDeferRecover(function, function.Recover.Index-1)
-		if err == nil && rec {
-			return true
-		}
-	}
-	if wallylib.IsClosure(function) {
-		enclosingFunc := closureArgumentOf(s, f.CallgraphNodes[s.Func.Parent()])
-		if enclosingFunc != nil && enclosingFunc.Recover != nil {
-			rec, err := findDeferRecover(enclosingFunc, enclosingFunc.Recover.Index-1)
-			if err == nil && rec {
-				return true
-			}
-		}
-		if enclosingFunc != nil {
-			for _, af := range enclosingFunc.AnonFuncs {
-				if af.Recover != nil {
-					rec, err := findDeferRecover(af, af.Recover.Index-1)
-					if err == nil && rec {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }
