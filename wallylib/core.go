@@ -343,6 +343,10 @@ func GetFunctionFromSite(site ssa.CallInstruction) *ssa.Function {
 	}
 }
 
+func IsClosure(function *ssa.Function) bool {
+	return strings.Contains(function.Name(), "$")
+}
+
 func getModuleName(pkg *packages.Package) (string, error) {
 	if pkg.Module != nil {
 		return pkg.Module.Path, nil
