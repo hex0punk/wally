@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/hex0punk/wally/indicator"
+	"github.com/hex0punk/wally/wallynode"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/ssa"
-	"strings"
 )
 
 type RouteMatch struct {
@@ -38,37 +38,51 @@ type CallPaths struct {
 
 type CallPath struct {
 	ID            int
-	Nodes         []*Node
+	Nodes         []wallynode.WallyNode
 	NodeLimited   bool
 	FilterLimited bool
 	Recoverable   bool
 }
 
-type NodeType int
+func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, filterLimited bool, simplify bool) {
+	// Simplified output can result in duplicates,
+	// as there can be multiple call sites inside the same enclosing function
+	if simplify {
+		for _, existingPath := range cp.Paths {
+			if isSamePath(existingPath, nodes) {
+				return
+			}
+		}
+	}
 
-const (
-	Site NodeType = iota
-	Function
-)
-
-type Node struct {
-	NodeType   NodeType
-	NodeString string
-	Pkg        *ssa.Package
-	Func       *ssa.Function
-}
-
-func (cp *CallPaths) InsertPaths(nodes []string, nodeLimited bool, filterLimited bool) {
 	callPath := CallPath{NodeLimited: nodeLimited, FilterLimited: filterLimited}
 
 	for _, node := range nodes {
-		callPath.Nodes = append(callPath.Nodes, &Node{NodeString: node})
+		if simplify && node.Site != nil {
+			continue
+		}
+		callPath.Nodes = append(callPath.Nodes, node)
 		// Temp hack while we replace nodes with a structure containing parts of a path (func, pkg, etc.)
-		if strings.Contains(node, "(recoverable)") {
+		if node.IsRecoverable() {
 			callPath.Recoverable = true
 		}
 	}
+
 	cp.Paths = append(cp.Paths, &callPath)
+}
+
+func isSamePath(callPath *CallPath, nodes []wallynode.WallyNode) bool {
+	if len(callPath.Nodes) != len(nodes) {
+		return false
+	}
+
+	for i, existingPath := range callPath.Nodes {
+		if existingPath.NodeString != nodes[i].NodeString {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (cp *CallPaths) Print() {

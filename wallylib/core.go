@@ -40,6 +40,7 @@ type SSAContext struct {
 
 func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
 	var match *indicator.Indicator
+
 	for _, ind := range indicators {
 		ind := ind
 
@@ -58,8 +59,17 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 			}
 		}
 
-		if ind.MatchFilter != "" && fi.EnclosedBy.Pkg != nil {
-			if !strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), ind.MatchFilter) {
+		filterMatch := false
+		if len(ind.MatchFilters) > 0 {
+			for _, mf := range ind.MatchFilters {
+				if mf != "" && fi.EnclosedBy.Pkg != nil {
+					if strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), mf) {
+						filterMatch = true
+						break
+					}
+				}
+			}
+			if !filterMatch {
 				continue
 			}
 		}
@@ -331,6 +341,10 @@ func GetFunctionFromSite(site ssa.CallInstruction) *ssa.Function {
 
 		return nil
 	}
+}
+
+func IsClosure(function *ssa.Function) bool {
+	return strings.Contains(function.Name(), "$")
 }
 
 func getModuleName(pkg *packages.Package) (string, error) {

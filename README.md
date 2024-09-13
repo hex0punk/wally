@@ -102,7 +102,14 @@ indicators:
 
 Note that you can specify the parameter that you want Wally to attempt to solve the value to. If you don't know the name of the parameter (per the function signature), you can give it the position in the signature. You can then use the `--config` or `-c` flag along with the path to the configuration file.
 
-### Match Filters vs. Path Filters
+### Filtering Matches
+
+You can exclude the following from the analysis performed by Wally
+
+- **Packages**: Using `--exclude-pkg` you can enter a comma separated list of packages that wally will skip when collecting function call matches.
+- **Position**: Using `--exclude-pos` you can enter a comma separated list of code positions for function calls to skip when wally collects matches. Evaluation is suffix based, so you could pass strings like `my_file.go:X:Y` to avoid, for instance, analysis of matches that have a spurious number of paths.
+
+## Match Filters vs. Path Filters
 
 You can provide a match filter or path filters to wally. 
 
@@ -264,6 +271,17 @@ At its core, Wally uses various algorithms available via the [golang.org/x/tools
     - A function node A originating in the `main` _package_ followed by a call to node B inside the `main` function of a different package
     - A function node A originating in the `main` _pacckage_ followed by a function/node B not in the same package _unless_ function/node A is a closure.
 - `0` (none): Wally will construct call paths even past main if reported by the chosen `tools/go/callgraph` algorithm.
+
+#### Simple mode
+
+Using `-s` or `--simple` tells wally to only focus not on call sites but instead the relation between functions. In this mode, wally does the following:
+
+- It constructs paths not based on call sites but on containing functions.
+- It skips call sites
+- Skips closures, focusing instead on the enclosing functions
+- Removes duplicates, as this kinda of analysis would result in duplicated results otherwise
+
+This allows you to get a higher level view of the relation between packages, functions, etc. in your code.
 
 ### Analyzing individual paths
 

@@ -2,10 +2,10 @@ package callmapper
 
 import (
 	"container/list"
-	"errors"
 	"fmt"
 	"github.com/hex0punk/wally/match"
 	"github.com/hex0punk/wally/wallylib"
+	"github.com/hex0punk/wally/wallynode"
 	"go/token"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
@@ -24,6 +24,7 @@ type CallMapper struct {
 	Match          *match.RouteMatch
 	Stop           bool
 	CallgraphNodes map[*ssa.Function]*callgraph.Node
+	NodeFactory    *wallynode.WallyNodeFactory
 }
 
 var SearchAlgs = map[string]SearchAlgorithm{
@@ -34,7 +35,7 @@ var SearchAlgs = map[string]SearchAlgorithm{
 // TODO: this should be path of the callpath structs in match pkg
 type BFSNode struct {
 	Node *callgraph.Node
-	Path []string
+	Path []wallynode.WallyNode
 }
 
 type LimiterMode int
@@ -67,6 +68,7 @@ type Options struct {
 	Limiter      LimiterMode
 	SkipClosures bool
 	ModuleOnly   bool
+	Simplify     bool
 }
 
 func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.Node, options Options) *CallMapper {
@@ -74,18 +76,25 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 	if options.ModuleOnly && match.Module != "" {
 		options.Filter = match.Module
 	}
+	nodeFactory := wallynode.NewWallyNodeFactory(nodes)
 	return &CallMapper{
 		Options:        options,
 		Match:          match,
 		CallgraphNodes: nodes,
+		NodeFactory:    nodeFactory,
 	}
 }
 
-func (cm *CallMapper) initPath(s *callgraph.Node) []string {
+func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
 	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
-	//encStr := cm.getNodeString(encBasePos, encPkg, cm.Match.SSA.EnclosedByFunc, s)
-	encStr := cm.getNodeString(encBasePos, s)
+	rec := wallynode.IsRecoverable(s, cm.CallgraphNodes)
+	encStr := wallynode.GetNodeString(encBasePos, s, rec)
+
+	if cm.Options.Simplify {
+		cm.Match.SSA.TargetPos = encStr
+		return []wallynode.WallyNode{}
+	}
 
 	// TODO: No real reason for this to be here
 	siteStr := ""
@@ -93,19 +102,21 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []string {
 		encStr = cm.Match.Pos.String()
 	} else {
 		sitePkg := cm.Match.SSA.SSAInstruction.Parent().Pkg
+
+		// cm.Options.Simplify should be false if here
 		siteBasePos := wallylib.GetFormattedPos(sitePkg, cm.Match.SSA.SSAInstruction.Pos())
 		if cm.Match.SSA.SSAFunc == nil {
 			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
 		} else {
 			targetFuncNode := cm.CallgraphNodes[cm.Match.SSA.SSAFunc]
-			//siteStr = cm.getNodeString(siteBasePos, sitePkg, cm.Match.SSA.SSAFunc, nil)
-			siteStr = cm.getNodeString(siteBasePos, targetFuncNode)
+			isRec := wallynode.IsRecoverable(targetFuncNode, cm.CallgraphNodes)
+			siteStr = wallynode.GetNodeString(siteBasePos, targetFuncNode, isRec)
 		}
 		cm.Match.SSA.TargetPos = siteStr
 	}
 
-	initialPath := []string{
-		encStr,
+	initialPath := []wallynode.WallyNode{
+		{NodeString: encStr, Caller: s},
 	}
 	return initialPath
 }
@@ -126,28 +137,28 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node) *match.CallPaths {
 	return callPaths
 }
 
-func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []string, paths *match.CallPaths, site ssa.CallInstruction) {
+func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []wallynode.WallyNode, paths *match.CallPaths, site ssa.CallInstruction) {
 	if cm.Options.Limiter > None && destination.Func.Pos() == token.NoPos {
 		return
 	}
 	newPath := cm.appendNodeToPath(destination, path, site)
 
 	if cm.Options.Limiter > None && isMainFunc(destination) {
-		paths.InsertPaths(newPath, false, false)
+		paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
 		cm.Stop = false
 		return
 	}
 
 	mustStop := cm.Options.MaxFuncs > 0 && len(newPath) >= cm.Options.MaxFuncs
 	if len(destination.In) == 0 || mustStop || cm.Stop {
-		paths.InsertPaths(newPath, mustStop, cm.Stop)
+		paths.InsertPaths(newPath, mustStop, cm.Stop, cm.Options.Simplify)
 		cm.Stop = false
 		return
 	}
 
 	// Avoids recursion within a single callpath
 	if visited[destination.ID] {
-		paths.InsertPaths(newPath, false, false)
+		paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
 		return
 	}
 	visited[destination.ID] = true
@@ -189,13 +200,13 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		cm.Stop = true
 	}
 	if allOutsideMainPkg {
-		paths.InsertPaths(newPath, mustStop, cm.Stop)
+		paths.InsertPaths(newPath, mustStop, cm.Stop, cm.Options.Simplify)
 		cm.Stop = false
 		return
 	}
 }
 
-func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *match.CallPaths) {
+func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []wallynode.WallyNode, paths *match.CallPaths) {
 	queue := list.New()
 	queue.PushBack(BFSNode{Node: start, Path: initialPath})
 
@@ -204,7 +215,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		//printQueue(queue)
 		// we process the first node
 		bfsNodeElm := queue.Front()
-		// We remove last elm so we can put it in the front after updating it with new paths
+		// We remove last elm, so we can put it in the front after updating it with new paths
 		queue.Remove(bfsNodeElm)
 
 		current := bfsNodeElm.Value.(BFSNode)
@@ -213,22 +224,22 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 		//printQueue(queue)
 
 		if cm.Options.Limiter > None && currentNode.Func.Pos() == token.NoPos {
-			paths.InsertPaths(currentPath, false, false)
+			paths.InsertPaths(currentPath, false, false, cm.Options.Simplify)
 			continue
 		}
 
 		if cm.Options.Limiter > None && isMainFunc(currentNode) {
-			paths.InsertPaths(currentPath, false, false)
+			paths.InsertPaths(currentPath, false, false, cm.Options.Simplify)
 			continue
 		}
 
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
 		if limitFuncsReached(currentPath, cm.Options) {
-			paths.InsertPaths(currentPath, true, false)
+			paths.InsertPaths(currentPath, true, false, cm.Options.Simplify)
 			continue
 		}
 
-		var newPath []string
+		var newPath []wallynode.WallyNode
 		iterNode := currentNode
 		if cm.Options.Limiter >= Strict || cm.Options.SkipClosures {
 			iterNode, newPath = cm.handleClosure(currentNode, currentPath)
@@ -246,7 +257,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				continue
 			}
 			// Do we care about this node, or is it in the path already (if it calls itself)?
-			if callerInPath(e, newPath) {
+			if cm.callerInPath(e, newPath) {
 				continue
 			}
 			if cm.Options.Limiter >= VeryStrict {
@@ -268,7 +279,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 				allOutsideFilter = false
 				allAlreadyInPath = false
 				// We care. So let's create a copy of the path. On first iteration this has only our two intial nodes
-				newPathCopy := make([]string, len(newPath))
+				newPathCopy := make([]wallynode.WallyNode, len(newPath))
 				copy(newPathCopy, newPath)
 
 				// We want to process the new node we added to the path.
@@ -283,47 +294,31 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []string, paths *ma
 			}
 		}
 		if allOutsideMainPkg && !allAlreadyInPath {
-			paths.InsertPaths(newPath, false, false)
+			paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
 			continue
 		}
 		if cm.Options.Filter != "" && allOutsideFilter {
-			paths.InsertPaths(newPath, false, true)
+			paths.InsertPaths(newPath, false, true, cm.Options.Simplify)
 			continue
 		}
 		if allMismatchSite {
-			paths.InsertPaths(currentPath, false, false)
+			paths.InsertPaths(currentPath, false, false, cm.Options.Simplify)
 			continue
 		}
 		if allAlreadyInPath {
-			paths.InsertPaths(newPath, false, false)
+			paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
 		}
 	}
 
 	// Insert whataver is left by now
 	for e := queue.Front(); e != nil; e = e.Next() {
 		bfsNode := e.Value.(BFSNode)
-		paths.InsertPaths(bfsNode.Path, false, false)
+		paths.InsertPaths(bfsNode.Path, false, false, cm.Options.Simplify)
 		cm.Match.SSA.PathLimited = pathLimited
 	}
 }
 
-// closureArgumentOf checks if the function is passed as an argument to another function
-func closureArgumentOf(targetNode *callgraph.Node, edges *callgraph.Node) *ssa.Function {
-	for _, edge := range edges.Out {
-		for _, arg := range edge.Site.Common().Args {
-			if argFn, ok := arg.(*ssa.MakeClosure); ok {
-				if argFn.Fn == targetNode.Func {
-					if res, ok := edge.Site.Common().Value.(*ssa.Function); ok {
-						return res
-					}
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func limitFuncsReached(path []string, options Options) bool {
+func limitFuncsReached(path []wallynode.WallyNode, options Options) bool {
 	return options.MaxFuncs > 0 && len(path) >= options.MaxFuncs
 }
 
@@ -351,7 +346,7 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 
 	isDifferentMainPkg := callerPkg.Name() == "main" && currentPkg.Path() != callerPkg.Path()
 	isNonMainPkg := callerPkg.Name() != "main" && currentPkg.Path() != callerPkg.Path()
-	isNonMainCallerOrClosure := isNonMainPkg && !isClosure(currentNode.Func)
+	isNonMainCallerOrClosure := isNonMainPkg && !wallylib.IsClosure(currentNode.Func)
 
 	if options.Limiter == Normal {
 		return isDifferentMainPkg || isNonMainCallerOrClosure
@@ -383,94 +378,37 @@ func passesFilter(node *callgraph.Node, filter string) bool {
 	return false
 }
 
-func callerInPath(e *callgraph.Edge, paths []string) bool {
-	fp := wallylib.GetFormattedPos(e.Caller.Func.Package(), e.Site.Pos())
+func (cm *CallMapper) callerInPath(e *callgraph.Edge, paths []wallynode.WallyNode) bool {
 	for _, p := range paths {
-		if strings.Contains(p, fp) {
+		if e.Caller.ID == p.Caller.ID {
 			return true
 		}
 	}
 	return false
 }
 
-func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []string, site ssa.CallInstruction) []string {
-	if site == nil {
+func (cm *CallMapper) appendNodeToPath(s *callgraph.Node, path []wallynode.WallyNode, site ssa.CallInstruction) []wallynode.WallyNode {
+	if site == nil && !cm.Options.Simplify {
 		return path
-		//return append(path, fmt.Sprintf("Func: %s.[%s] %s", s.Func.Pkg.Pkg.Name(), s.Func.Name(), wallylib.GetFormattedPos(s.Func.Package(), s.Func.Pos())))
 	}
-
-	if cm.Options.PrintNodes || s.Func.Package() == nil {
-		return append(path, s.String())
-	}
-
-	fp := wallylib.GetFormattedPos(s.Func.Package(), site.Pos())
-
-	nodeDescription := cm.getNodeString(fp, s)
-
-	return append(path, nodeDescription)
+	return append(path, cm.buildWallyNode(s, site))
 }
 
-func (cm *CallMapper) getNodeString(basePos string, s *callgraph.Node) string {
-	pkg := s.Func.Package()
-	function := s.Func
-	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
-
-	isRecoverable := cm.isRecoverable(s)
-	if isRecoverable {
-		return fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-	}
-
-	return baseStr
-}
-
-func (cm *CallMapper) isRecoverable(s *callgraph.Node) bool {
-	function := s.Func
-	if function.Recover != nil {
-		rec, err := findDeferRecover(function, function.Recover.Index-1)
-		if err == nil && rec {
-			return true
-		}
-	}
-	if s != nil && isClosure(function) {
-		enclosingFunc := closureArgumentOf(s, cm.CallgraphNodes[s.Func.Parent()])
-		if enclosingFunc != nil && enclosingFunc.Recover != nil {
-			rec, err := findDeferRecover(enclosingFunc, enclosingFunc.Recover.Index-1)
-			if err == nil && rec {
-				return true
-			}
-		}
-		if enclosingFunc != nil {
-			for _, af := range enclosingFunc.AnonFuncs {
-				if af.Recover != nil {
-					rec, err := findDeferRecover(af, af.Recover.Index-1)
-					if err == nil && rec {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
-}
-
-func (cm *CallMapper) getRecoverString(pkg *ssa.Package, function *ssa.Function, recoverIdx int, basePos string) string {
-	rec, err := findDeferRecover(function, recoverIdx)
-	if err != nil {
-		return fmt.Sprintf("%s.[%s] (%s) %s", pkg.Pkg.Name(), function.Name(), err.Error(), basePos)
-	}
-	if rec {
-		return fmt.Sprintf("%s.[%s] (recoverable) %s", pkg.Pkg.Name(), function.Name(), basePos)
-	}
-	return fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
-}
-
-func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []string) (*callgraph.Node, []string) {
+func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []wallynode.WallyNode) (*callgraph.Node, []wallynode.WallyNode) {
 	newPath := cm.appendNodeToPath(node, currentPath, nil)
 
-	if isClosure(node.Func) {
+	if wallylib.IsClosure(node.Func) {
 		node = cm.CallgraphNodes[node.Func.Parent()]
-		for isClosure(node.Func) {
-			newPath = append(newPath, fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos())))
+		for wallylib.IsClosure(node.Func) {
+			if !cm.Options.Simplify {
+				str := fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos()))
+				newPath = append(newPath, cm.NodeFactory.CreateWallyNode(str, node, nil))
+				//str := fmt.Sprintf("%s.[%s] %s", node.Func.Pkg.Pkg.Name(), node.Func.Name(), wallylib.GetFormattedPos(node.Func.Package(), node.Func.Pos()))
+				//newPath = append(newPath, wallynode.WallyNode{
+				//	NodeString: str,
+				//	Caller:     node,
+				//})
+			}
 			node = cm.CallgraphNodes[node.Func.Parent()]
 		}
 	}
@@ -478,85 +416,28 @@ func (cm *CallMapper) handleClosure(node *callgraph.Node, currentPath []string) 
 	return node, newPath
 }
 
-func findDeferRecover(fn *ssa.Function, idx int) (bool, error) {
-	visited := make(map[*ssa.Function]bool)
-	return findDeferRecoverRecursive(fn, visited, idx)
-}
-
-func findDeferRecoverRecursive(fn *ssa.Function, visited map[*ssa.Function]bool, starterBlock int) (bool, error) {
-	if visited[fn] {
-		return false, nil
+func (cm *CallMapper) buildWallyNode(s *callgraph.Node, site ssa.CallInstruction) wallynode.WallyNode {
+	if site == nil && cm.Options.Simplify {
+		s = cm.getClosureRootNode(s)
+		return cm.NodeFactory.CreateWallyNode("", s, site)
 	}
 
-	visited[fn] = true
+	if cm.Options.PrintNodes || s.Func.Package() == nil {
+		return cm.NodeFactory.CreateWallyNode(s.String(), s, site)
+	}
 
-	// we use starterBlock on first call as we know where the defer call is, then reset it to 0 for subsequent blocks
-	// to find the recover() if there
-	for blockIdx := starterBlock; blockIdx < len(fn.Blocks); blockIdx++ {
-		block := fn.Blocks[blockIdx]
-		for _, instr := range block.Instrs {
-			switch it := instr.(type) {
-			case *ssa.Defer:
-				if call, ok := it.Call.Value.(*ssa.Function); ok {
-					if containsRecoverCall(call) {
-						return true, nil
-					}
-				}
-			case *ssa.Go:
-				if call, ok := it.Call.Value.(*ssa.Function); ok {
-					if containsRecoverCall(call) {
-						return true, nil
-					}
-				}
-			case *ssa.Call:
-				if callee := it.Call.Value; callee != nil {
-					if callee.Name() == "recover" {
-						return true, nil
-					}
-					if nestedFunc, ok := callee.(*ssa.Function); ok {
-						if _, err := findDeferRecoverRecursive(nestedFunc, visited, 0); err != nil {
-							return true, nil
-						}
-					}
-				}
-			case *ssa.MakeClosure:
-				if closureFn, ok := it.Fn.(*ssa.Function); ok {
-					res, err := findDeferRecoverRecursive(closureFn, visited, 0)
-					if err != nil {
-						return false, errors.New("unexpected error finding recover block")
-					}
-					if res {
-						return true, nil
-					}
-				}
-			}
+	return cm.NodeFactory.CreateWallyNode("", s, site)
+}
+
+func (cm *CallMapper) getClosureRootNode(s *callgraph.Node) *callgraph.Node {
+	if wallylib.IsClosure(s.Func) {
+		node := cm.CallgraphNodes[s.Func.Parent()]
+		for wallylib.IsClosure(node.Func) {
+			node = cm.CallgraphNodes[node.Func.Parent()]
 		}
+		return node
 	}
-	return false, nil
-}
-
-func containsRecoverCall(fn *ssa.Function) bool {
-	for _, block := range fn.Blocks {
-		for _, instr := range block.Instrs {
-			if isRecoverCall(instr) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func isRecoverCall(instr ssa.Instruction) bool {
-	if callInstr, ok := instr.(*ssa.Call); ok {
-		if callee, ok := callInstr.Call.Value.(*ssa.Builtin); ok {
-			return callee.Name() == "recover"
-		}
-	}
-	return false
-}
-
-func isClosure(function *ssa.Function) bool {
-	return strings.Contains(function.Name(), "$")
+	return s
 }
 
 // Only to be used when debugging

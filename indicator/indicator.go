@@ -24,7 +24,7 @@ type Indicator struct {
 	Params        []RouteParam  `yaml:"params"`
 	IndicatorType IndicatorType `yaml:"indicatorType"`
 	ReceiverType  string        `yaml:"receiverType"`
-	MatchFilter   string        `yaml:"matchFilter"`
+	MatchFilters  []string      `yaml:"matchFilter"`
 }
 
 type RouteParam struct {
@@ -69,7 +69,7 @@ func getStockIndicators() []Indicator {
 				{Name: "pattern"},
 			},
 			IndicatorType: Service,
-			MatchFilter:   "",
+			MatchFilters:  []string{},
 		},
 		{
 			Id:       "2",
@@ -80,7 +80,7 @@ func getStockIndicators() []Indicator {
 				{Name: "method"},
 			},
 			IndicatorType: Service,
-			MatchFilter:   "",
+			MatchFilters:  []string{},
 		},
 	}
 }
