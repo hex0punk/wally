@@ -7,6 +7,7 @@ import (
 	"github.com/hex0punk/wally/reporter"
 	"github.com/hex0punk/wally/server"
 	"github.com/hex0punk/wally/wallylib/callmapper"
+	"github.com/hex0punk/wally/wallyutils/cache"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 	"log"
@@ -35,6 +36,8 @@ var (
 	skipClosures       bool
 	moduleOnly         bool
 	simplify           bool
+	saveCache          bool
+	cachePath          string
 	excludePkgs        []string
 	excluseByPosSuffix []string
 )
@@ -96,6 +99,9 @@ func init() {
 	mapCmd.PersistentFlags().StringSliceVar(&excludePkgs, "exclude-pkg", []string{}, "Comma separated list of packages to exclude")
 	mapCmd.PersistentFlags().StringSliceVar(&excluseByPosSuffix, "exclude-pos", []string{}, "Comma separated list of position prefixes used for filtering the selected function call matches")
 
+	mapCmd.PersistentFlags().BoolVar(&saveCache, "save-cache", false, "Caches SSA structures for future runs")
+	mapCmd.PersistentFlags().StringVar(&cachePath, "cache-path", "./.wally-cache", "Where to save cache to. Defaults to ./.wally-cache")
+
 	mapCmd.PersistentFlags().BoolVar(&serverGraph, "server", false, "Starts a server on port 1984 with output graph")
 }
 
@@ -111,8 +117,14 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 		PosSuffixes: excluseByPosSuffix,
 	}
 
-	nav.Logger.Info("Running mapper", "indicators", len(indicators))
+	if saveCache {
+		nav.SaveCache = saveCache
+		nav.Cache = &cache.Cache{
+			Path: cachePath,
+		}
+	}
 
+	nav.Logger.Info("Running mapper", "indicators", len(indicators))
 	nav.MapRoutes(paths)
 
 	if len(nav.RouteMatches) == 0 {

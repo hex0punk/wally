@@ -12,6 +12,7 @@ import (
 	"github.com/hex0punk/wally/reporter"
 	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallylib/callmapper"
+	"github.com/hex0punk/wally/wallyutils/cache"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -45,6 +46,8 @@ type Navigator struct {
 	Packages        []*packages.Package
 	CallgraphAlg    string
 	Exclusions      Exclusions
+	Cache           *cache.Cache
+	SaveCache       bool
 }
 
 type Exclusions struct {
@@ -84,39 +87,13 @@ func (n *Navigator) MapRoutes(paths []string) {
 		paths = append(paths, "./...")
 	}
 
+	n.Logger.Info("Loading packages")
 	pkgs := LoadPackages(paths)
 	n.Packages = pkgs
 
 	if n.RunSSA {
-		n.Logger.Info("Building SSA program")
-		n.SSA = &SSA{
-			Packages: []*ssa.Package{},
-		}
-		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
-		n.SSA.Packages = ssaPkgs
-		n.SSA.Program = prog
-		prog.Build()
-
-		n.Logger.Info("Generating SSA based callgraph", "alg", n.CallgraphAlg)
-		switch n.CallgraphAlg {
-		case "static":
-			n.SSA.Callgraph = static.CallGraph(prog)
-		case "cha":
-			n.SSA.Callgraph = cha.CallGraph(prog)
-		case "rta":
-			mains := ssautil.MainPackages(ssaPkgs)
-			var roots []*ssa.Function
-			for _, main := range mains {
-				roots = append(roots, main.Func("init"), main.Func("main"))
-			}
-			rtares := rta.Analyze(roots, true)
-			n.SSA.Callgraph = rtares.CallGraph
-		case "vta":
-			n.SSA.Callgraph = vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
-		default:
-			log.Fatalf("Unknown callgraph alg %s", n.CallgraphAlg)
-		}
-		n.Logger.Info("SSA callgraph generated successfully")
+		n.BuildSSAProg()
+		n.BuildCallgraph()
 	}
 
 	n.Logger.Info("Finding functions via AST parsing")
@@ -172,6 +149,56 @@ func (n *Navigator) MapRoutes(paths []string) {
 			if passIssues, ok := result.([]match.RouteMatch); ok {
 				n.RouteMatches = append(n.RouteMatches, passIssues...)
 			}
+		}
+	}
+}
+
+func (n *Navigator) BuildSSAProg() {
+	n.Logger.Info("Building SSA program")
+	n.SSA = &SSA{
+		Packages: []*ssa.Package{},
+	}
+	prog, ssaPkgs := ssautil.AllPackages(n.Packages, ssa.InstantiateGenerics)
+	n.SSA.Packages = ssaPkgs
+	n.SSA.Program = prog
+	prog.Build()
+}
+
+func (n *Navigator) BuildCallgraph() {
+	if err := n.Cache.Load(n.Cache.Path); err == nil {
+		n.Logger.Info("Loading SSA program from cache")
+		n.SSA = &SSA{
+			Callgraph: n.Cache.Callgraph,
+		}
+		return
+	}
+
+	n.Logger.Info("Generating SSA based callgraph", "alg", n.CallgraphAlg)
+	switch n.CallgraphAlg {
+	case "static":
+		n.SSA.Callgraph = static.CallGraph(n.SSA.Program)
+	case "cha":
+		n.SSA.Callgraph = cha.CallGraph(n.SSA.Program)
+	case "rta":
+		mains := ssautil.MainPackages(n.SSA.Packages)
+		var roots []*ssa.Function
+		for _, main := range mains {
+			roots = append(roots, main.Func("init"), main.Func("main"))
+		}
+		rtares := rta.Analyze(roots, true)
+		n.SSA.Callgraph = rtares.CallGraph
+	case "vta":
+		n.SSA.Callgraph = vta.CallGraph(ssautil.AllFunctions(n.SSA.Program), cha.CallGraph(n.SSA.Program))
+	default:
+		log.Fatalf("Unknown callgraph alg %s", n.CallgraphAlg)
+	}
+	n.Logger.Info("SSA callgraph generated successfully")
+
+	if n.SaveCache {
+		n.Logger.Info("Saving cache to ", n.Cache.Path)
+		n.Cache.Callgraph = n.SSA.Callgraph
+		if err := n.Cache.Save(n.Cache.Path); err != nil {
+			n.Logger.Error("Failed to save cache:", err)
 		}
 	}
 }
@@ -324,8 +351,8 @@ func (n *Navigator) PassesExclusions(pos token.Position, pkg string) bool {
 		return true
 	}
 
-	for _, pkg := range n.Exclusions.Packages {
-		if pkg == pkg {
+	for _, exPkg := range n.Exclusions.Packages {
+		if exPkg == pkg {
 			return false
 		}
 	}

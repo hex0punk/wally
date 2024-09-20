@@ -7,6 +7,7 @@ import (
 	"github.com/hex0punk/wally/reporter"
 	"github.com/hex0punk/wally/server"
 	"github.com/hex0punk/wally/wallylib/callmapper"
+	"github.com/hex0punk/wally/wallyutils/cache"
 	"github.com/spf13/cobra"
 	"strings"
 )
@@ -76,6 +77,12 @@ func searchFunc(cmd *cobra.Command, args []string) {
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = true
 	nav.CallgraphAlg = callgraphAlg
+	if saveCache {
+		nav.SaveCache = saveCache
+		nav.Cache = &cache.Cache{
+			Path: cachePath,
+		}
+	}
 
 	mapperOptions := callmapper.Options{
 		Filter:       filter,
