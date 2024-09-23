@@ -91,10 +91,10 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 	rec := wallynode.IsRecoverable(s, cm.CallgraphNodes)
 	encStr := wallynode.GetNodeString(encBasePos, s, rec)
 
-	if cm.Options.Simplify {
-		cm.Match.SSA.TargetPos = encStr
-		return []wallynode.WallyNode{}
-	}
+	//if cm.Options.Simplify {
+	//	cm.Match.SSA.TargetPos = encStr
+	//	return []wallynode.WallyNode{}
+	//}
 
 	// TODO: No real reason for this to be here
 	siteStr := ""
@@ -113,6 +113,10 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 			siteStr = wallynode.GetNodeString(siteBasePos, targetFuncNode, isRec)
 		}
 		cm.Match.SSA.TargetPos = siteStr
+	}
+
+	if cm.Options.Simplify {
+		return []wallynode.WallyNode{}
 	}
 
 	initialPath := []wallynode.WallyNode{

@@ -45,16 +45,6 @@ type CallPath struct {
 }
 
 func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, filterLimited bool, simplify bool) {
-	// Simplified output can result in duplicates,
-	// as there can be multiple call sites inside the same enclosing function
-	if simplify {
-		for _, existingPath := range cp.Paths {
-			if isSamePath(existingPath, nodes) {
-				return
-			}
-		}
-	}
-
 	callPath := CallPath{NodeLimited: nodeLimited, FilterLimited: filterLimited}
 
 	for _, node := range nodes {
@@ -65,6 +55,16 @@ func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, 
 		// Temp hack while we replace nodes with a structure containing parts of a path (func, pkg, etc.)
 		if node.IsRecoverable() {
 			callPath.Recoverable = true
+		}
+	}
+
+	// Simplified output can result in duplicates,
+	// as there can be multiple call sites inside the same enclosing function
+	if simplify {
+		for _, existingPath := range cp.Paths {
+			if isSamePath(existingPath, callPath.Nodes) {
+				return
+			}
 		}
 	}
 
