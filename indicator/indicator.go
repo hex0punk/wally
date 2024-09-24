@@ -24,7 +24,7 @@ type Indicator struct {
 	Params        []RouteParam  `yaml:"params"`
 	IndicatorType IndicatorType `yaml:"indicatorType"`
 	ReceiverType  string        `yaml:"receiverType"`
-	MatchFilters  []string      `yaml:"matchFilter"`
+	MatchFilters  []string      `yaml:"matchFilters"`
 }
 
 type RouteParam struct {
@@ -51,7 +51,15 @@ func InitIndicators(customIndicators []Indicator, skipDefault bool) []Indicator 
 			if indCpy.ReceiverType != "" {
 				fmt.Println("Receiver Type: ", indCpy.ReceiverType)
 			}
+
+			if len(indCpy.MatchFilters) > 0 {
+				fmt.Println("Match Filters: ")
+				for _, filter := range indCpy.MatchFilters {
+					fmt.Printf("\t%s\n", filter)
+				}
+			}
 			fmt.Println()
+
 			indicators = append(indicators, indCpy)
 		}
 	}

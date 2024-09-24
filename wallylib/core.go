@@ -76,6 +76,7 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 
 		match = &ind
 	}
+
 	return match
 }
 

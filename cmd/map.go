@@ -37,6 +37,7 @@ var (
 	simplify           bool
 	excludePkgs        []string
 	excluseByPosSuffix []string
+	matchFilters       []string
 )
 
 // mapCmd represents the map command
@@ -93,6 +94,7 @@ func init() {
 	mapCmd.PersistentFlags().StringVar(&format, "format", "", "Output format. Supported: json, csv")
 	mapCmd.PersistentFlags().StringVarP(&outputFile, "out", "o", "", "Output to file path")
 
+	mapCmd.PersistentFlags().StringSliceVar(&matchFilters, "match-filter", []string{}, "Package prefix used for filtering the selected function call matches")
 	mapCmd.PersistentFlags().StringSliceVar(&excludePkgs, "exclude-pkg", []string{}, "Comma separated list of packages to exclude")
 	mapCmd.PersistentFlags().StringSliceVar(&excluseByPosSuffix, "exclude-pos", []string{}, "Comma separated list of position prefixes used for filtering the selected function call matches")
 

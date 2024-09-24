@@ -273,7 +273,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		// Now try to get the params for methods, path, etc.
-		funcMatch.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
+		funcMatch.Params = wallylib.See(funcInfo.Signature, ce, pass)
 
 		//Get the enclosing func
 		if n.RunSSA {

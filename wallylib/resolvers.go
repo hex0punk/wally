@@ -25,6 +25,15 @@ func ResolveParams(params []indicator.RouteParam, sig *types.Signature, ce *ast.
 	return resolvedParams
 }
 
+func See(sig *types.Signature, ce *ast.CallExpr, pass *analysis.Pass) map[string]string {
+	resolvedParams := make(map[string]string)
+	for i := 0; i < sig.Params().Len()-1; i++ {
+		val := ResolveParamFromPos(i, ce, pass)
+		resolvedParams[sig.Params().At(i).Name()] = val
+	}
+	return resolvedParams
+}
+
 func ResolveParamFromPos(pos int, param *ast.CallExpr, pass *analysis.Pass) string {
 	if param.Args != nil && len(param.Args) > 0 {
 		arg := param.Args[pos]
