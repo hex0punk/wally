@@ -25,9 +25,13 @@ func PrintResults(matches []match.RouteMatch) {
 func PrintMach(match match.RouteMatch) {
 	fmt.Println("===========MATCH===============")
 	fmt.Println("ID: ", match.MatchId)
-	fmt.Println("Indicator ID: ", match.Indicator.Id)
-	fmt.Println("Package: ", match.Indicator.Package)
-	fmt.Println("Function: ", match.Indicator.Function)
+	if match.ParentMatch != nil {
+		fmt.Println("Parent: ", match.IndicatorId)
+	}
+	fmt.Println("Module: ", match.Module)
+	fmt.Println("Indicator ID: ", match.IndicatorId)
+	fmt.Println("Package: ", match.FuncInfo.Package)
+	fmt.Println("Function: ", match.FuncInfo.Name)
 	fmt.Println("Module: ", match.Module)
 	fmt.Println("Params: ")
 	for k, v := range match.Params {
@@ -71,6 +75,10 @@ func PrintMach(match match.RouteMatch) {
 				fmt.Printf("		%s --->\n", paths.Nodes[x].NodeString)
 			}
 			fmt.Printf("			%s\n", match.SSA.TargetPos)
+
+			if match.ParentMatch != nil {
+				fmt.Printf("				Parent: %s\n", match.ParentMatch.SSA.TargetPos)
+			}
 		}
 	}
 	fmt.Println()

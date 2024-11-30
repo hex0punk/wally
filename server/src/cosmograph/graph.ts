@@ -267,10 +267,10 @@ export function detailsOff() {
 
 export function setLeftSide(finding: any) {
   detailsOn();
-  document.getElementById("pkg")!.textContent = finding.Indicator.Package;
-  document.getElementById("func")!.textContent = finding.Indicator.Function;
+  document.getElementById("pkg")!.textContent = finding.FuncPkg;
+  document.getElementById("func")!.textContent = finding.FuncName;
   document.getElementById("params")!.textContent = JSON.stringify(
-    finding.Indicator.Params,
+    finding.Params,
   );
   document.getElementById("enclosedBy")!.textContent = finding.EnclosedBy;
   document.getElementById("pos")!.textContent = finding.Pos;

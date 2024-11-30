@@ -4,22 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/hex0punk/wally/indicator"
+	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallynode"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 )
 
 type RouteMatch struct {
-	MatchId    string
-	Indicator  indicator.Indicator // It should be FuncInfo instead
-	Params     map[string]string
-	Pos        token.Position
-	Signature  *types.Signature
-	EnclosedBy string
-	Module     string
-	SSA        *SSAContext
+	MatchId     string
+	IndicatorId string
+	FuncInfo    *wallylib.FuncInfo
+	Params      map[string]string
+	Pos         token.Position
+	Signature   *types.Signature
+	EnclosedBy  string
+	Module      string
+	SSA         *SSAContext
+	ParentMatch *RouteMatch
 }
 
 // TODO: I don't love this here, maybe an SSA dedicated pkg would be better
@@ -30,6 +33,7 @@ type SSAContext struct {
 	SSAInstruction ssa.CallInstruction
 	SSAFunc        *ssa.Function
 	TargetPos      string
+	BaseNode       *callgraph.Node
 }
 
 type CallPaths struct {
@@ -94,12 +98,13 @@ func (cp *CallPaths) Print() {
 	}
 }
 
-func NewRouteMatch(indicator indicator.Indicator, pos token.Position) RouteMatch {
+func NewRouteMatch(indicatorId string, funcInfo *wallylib.FuncInfo, pos token.Position) RouteMatch {
 	return RouteMatch{
-		MatchId:   uuid.New().String(),
-		Indicator: indicator,
-		Pos:       pos,
-		SSA:       &SSAContext{},
+		MatchId:     uuid.New().String(),
+		IndicatorId: indicatorId,
+		Pos:         pos,
+		SSA:         &SSAContext{},
+		FuncInfo:    funcInfo,
 	}
 }
 func (r *RouteMatch) MarshalJSON() ([]byte, error) {
@@ -128,12 +133,17 @@ func (r *RouteMatch) MarshalJSON() ([]byte, error) {
 			p = append(p, paths.Nodes[x].NodeString)
 		}
 		p = append(p, r.SSA.TargetPos)
+		if r.ParentMatch != nil {
+			p = append(p, r.ParentMatch.SSA.TargetPos)
+		}
 		resPaths = append(resPaths, p)
 	}
 
 	return json.Marshal(struct {
 		MatchId     string
-		Indicator   indicator.Indicator
+		IndicatorId string
+		FuncName    string
+		FuncPkg     string
 		Params      map[string]string
 		Pos         string
 		EnclosedBy  string
@@ -141,7 +151,9 @@ func (r *RouteMatch) MarshalJSON() ([]byte, error) {
 		Paths       [][]string
 	}{
 		MatchId:     r.MatchId,
-		Indicator:   r.Indicator,
+		IndicatorId: r.IndicatorId,
+		FuncName:    r.FuncInfo.Name,
+		FuncPkg:     r.FuncInfo.Package,
 		Params:      params,
 		Pos:         r.Pos.String(),
 		EnclosedBy:  enclosedBy,

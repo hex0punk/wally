@@ -10,6 +10,7 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
+	"regexp"
 	"strings"
 )
 
@@ -49,8 +50,21 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 		if fi.Package != ind.Package && ind.Package != "*" {
 			continue
 		}
-		if fi.Name != ind.Function {
-			continue
+
+		if strings.HasPrefix(ind.Function, "/") && strings.HasSuffix(ind.Function, "/") {
+			regexPattern := ind.Function[1 : len(ind.Function)-1]
+			regex, err := regexp.Compile(regexPattern)
+			if err != nil {
+				// TODO: regex should be checked before this running main logic
+				continue
+			}
+			if !regex.MatchString(fi.Name) {
+				continue
+			}
+		} else {
+			if fi.Name != ind.Function {
+				continue
+			}
 		}
 
 		if ind.ReceiverType != "" {
@@ -62,7 +76,7 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 		filterMatch := false
 		if len(ind.MatchFilters) > 0 {
 			for _, mf := range ind.MatchFilters {
-				if mf != "" && fi.EnclosedBy.Pkg != nil {
+				if mf != "" && fi.EnclosedBy != nil && fi.EnclosedBy.Pkg != nil {
 					if strings.HasPrefix(fi.EnclosedBy.Pkg.Path(), mf) {
 						filterMatch = true
 						break
@@ -75,6 +89,9 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 		}
 
 		match = &ind
+		if match.Package == "*" {
+			match.Package = fi.Package
+		}
 	}
 
 	return match

@@ -86,43 +86,23 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 }
 
 func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
-	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
-	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
-	rec := wallynode.IsRecoverable(s, cm.CallgraphNodes)
-	encStr := wallynode.GetNodeString(encBasePos, s, rec)
-
-	//if cm.Options.Simplify {
-	//	cm.Match.SSA.TargetPos = encStr
-	//	return []wallynode.WallyNode{}
-	//}
+	encStr := cm.getEncString(s)
 
 	// TODO: No real reason for this to be here
-	siteStr := ""
+	// Now obtain the target pos for the paths we will find for this match
 	if cm.Match.SSA.SSAInstruction == nil {
 		encStr = cm.Match.Pos.String()
 	} else {
-		sitePkg := cm.Match.SSA.SSAInstruction.Parent().Pkg
-
-		// cm.Options.Simplify should be false if here
-		siteBasePos := wallylib.GetFormattedPos(sitePkg, cm.Match.SSA.SSAInstruction.Pos())
-		if cm.Match.SSA.SSAFunc == nil {
-			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
-		} else {
-			targetFuncNode := cm.CallgraphNodes[cm.Match.SSA.SSAFunc]
-			isRec := wallynode.IsRecoverable(targetFuncNode, cm.CallgraphNodes)
-			siteStr = wallynode.GetNodeString(siteBasePos, targetFuncNode, isRec)
-		}
-		cm.Match.SSA.TargetPos = siteStr
+		cm.Match.SSA.TargetPos = cm.getTargetPos()
 	}
 
 	if cm.Options.Simplify {
 		return []wallynode.WallyNode{}
 	}
 
-	initialPath := []wallynode.WallyNode{
+	return []wallynode.WallyNode{
 		{NodeString: encStr, Caller: s},
 	}
-	return initialPath
 }
 
 func (cm *CallMapper) AllPathsBFS(s *callgraph.Node) *match.CallPaths {
@@ -442,6 +422,31 @@ func (cm *CallMapper) getClosureRootNode(s *callgraph.Node) *callgraph.Node {
 		return node
 	}
 	return s
+}
+
+func (cm *CallMapper) getEncString(s *callgraph.Node) string {
+	fn := cm.Match.SSA.EnclosedByFunc
+	encPkg := fn.Pkg
+	encBasePos := wallylib.GetFormattedPos(encPkg, fn.Pos())
+	rec := wallynode.IsRecoverable(s, cm.CallgraphNodes)
+	return wallynode.GetNodeString(encBasePos, s, rec)
+}
+
+func (cm *CallMapper) getTargetPos() string {
+	ssaCtx := cm.Match.SSA
+	siteStr := ""
+	sitePkg := ssaCtx.SSAInstruction.Parent().Pkg
+
+	// cm.Options.Simplify should be false if here
+	siteBasePos := wallylib.GetFormattedPos(sitePkg, ssaCtx.SSAInstruction.Pos())
+	if ssaCtx.SSAFunc == nil {
+		siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.FuncInfo.Name, siteBasePos)
+	} else {
+		targetFuncNode := cm.CallgraphNodes[ssaCtx.SSAFunc]
+		isRec := wallynode.IsRecoverable(targetFuncNode, cm.CallgraphNodes)
+		siteStr = wallynode.GetNodeString(siteBasePos, targetFuncNode, isRec)
+	}
+	return siteStr
 }
 
 // Only to be used when debugging

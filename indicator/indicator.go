@@ -25,6 +25,7 @@ type Indicator struct {
 	IndicatorType IndicatorType `yaml:"indicatorType"`
 	ReceiverType  string        `yaml:"receiverType"`
 	MatchFilters  []string      `yaml:"matchFilters"`
+	RootId        string        `yaml:"rootId"`
 }
 
 type RouteParam struct {

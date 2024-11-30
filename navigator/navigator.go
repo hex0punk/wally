@@ -264,16 +264,43 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		// Whether we are able to get params or not we have a match
-		funcMatch := match.NewRouteMatch(*route, pos)
+		funcMatch := match.NewRouteMatch(route.Id, funcInfo, pos)
+
+		for _, ind := range n.RouteIndicators {
+			if ind.Id != "" && ind.Id == funcMatch.IndicatorId {
+				for _, previousMatch := range n.RouteMatches {
+					if previousMatch.MatchId == ind.RootId {
+						funcMatch.ParentMatch = &previousMatch
+					}
+				}
+			}
+		}
 
 		if modName := n.GetModuleName(funcInfo.Pkg); modName != "" {
 			funcMatch.Module = modName
 		} else {
-			funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
+			if funcInfo.EnclosedBy != nil {
+				funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
+			}
 		}
 
 		// Now try to get the params for methods, path, etc.
 		funcMatch.Params = wallylib.See(funcInfo.Signature, ce, pass)
+		if val, ok := funcMatch.Params["method"]; ok {
+			parts := strings.Split(val, "/")
+			if len(parts) > 1 {
+				result := parts[len(parts)-1]
+				result = strings.Trim(result, "\"")
+				newId := len(n.RouteIndicators) + 1
+				n.RouteIndicators = append(n.RouteIndicators, indicator.Indicator{
+					Id:           fmt.Sprintf("%d", newId),
+					Package:      "*",
+					Function:     result,
+					MatchFilters: []string{pass.Pkg.Path()},
+					RootId:       funcMatch.MatchId,
+				})
+			}
+		}
 
 		//Get the enclosing func
 		if n.RunSSA {
@@ -289,6 +316,8 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 					} else {
 						n.Logger.Debug("unable to get SSA instruction for function", "function", ssaEnclosingFunc.Name())
 					}
+
+					funcMatch.SSA.BaseNode = n.GetNodeFromFunction(funcMatch.SSA.EnclosedByFunc)
 				}
 			}
 		}
@@ -399,6 +428,10 @@ func (n *Navigator) SolvePathsSlow() {
 	}
 }
 
+func (n *Navigator) GetNodeFromFunction(fn *ssa.Function) *callgraph.Node {
+	return n.SSA.Callgraph.Nodes[fn]
+}
+
 func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	var wg sync.WaitGroup
 
@@ -418,9 +451,9 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 			n.Logger.Debug("Solving paths for match", "match", routeMatch.Pos.String())
 
 			if options.SearchAlg == callmapper.Dfs {
-				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
+				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(routeMatch.SSA.BaseNode)
 			} else {
-				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
+				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(routeMatch.SSA.BaseNode)
 			}
 
 			duration := time.Since(start)
