@@ -9,7 +9,6 @@ import (
 	"strconv"
 )
 
-//go:embed dist
 var public embed.FS
 
 var jsonFile []byte

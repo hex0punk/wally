@@ -92,7 +92,7 @@ func (n *Navigator) MapRoutes(paths []string) {
 		n.SSA = &SSA{
 			Packages: []*ssa.Package{},
 		}
-		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
+		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics|ssa.SanityCheckFunctions)
 		n.SSA.Packages = ssaPkgs
 		n.SSA.Program = prog
 		prog.Build()
@@ -215,7 +215,6 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 	inspecting := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	callMapper := pass.ResultOf[callermapper.Analyzer].(*cefinder.CeFinder)
 	//flow := pass.ResultOf[ctrlflow.Analyzer].(*ctrlflow.CFGs)
-
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
 		(*ast.GenDecl)(nil),

@@ -1,6 +1,6 @@
 module github.com/hex0punk/wally
 
-go 1.22.4
+go 1.23
 
 require (
 	github.com/goccy/go-graphviz v0.1.2
