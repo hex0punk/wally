@@ -29,6 +29,14 @@ func (n *WallyNode) IsRecoverable() bool {
 func GetNodeString(basePos string, s *callgraph.Node, recoverable bool) string {
 	pkg := s.Func.Package()
 	function := s.Func
+	if s.Func == nil {
+		fmt.Println("func is nil")
+		return basePos
+	}
+	if pkg == nil {
+		fmt.Println("pkg is nil")
+		return basePos
+	}
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkg.Pkg.Name(), function.Name(), basePos)
 
 	if recoverable {

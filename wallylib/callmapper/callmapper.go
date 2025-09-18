@@ -3,13 +3,14 @@ package callmapper
 import (
 	"container/list"
 	"fmt"
+	"go/token"
+	"strings"
+
 	"github.com/hex0punk/wally/match"
 	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallynode"
-	"go/token"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
-	"strings"
 )
 
 type SearchAlgorithm int
@@ -129,6 +130,10 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 
 	if cm.Options.Limiter > None && isMainFunc(destination) {
 		paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
+		// Report progress
+		if cm.Match.SSA.ProgressChan != nil {
+			cm.Match.SSA.ProgressChan <- len(paths.Paths)
+		}
 		cm.Stop = false
 		return
 	}
@@ -136,6 +141,10 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	mustStop := cm.Options.MaxFuncs > 0 && len(newPath) >= cm.Options.MaxFuncs
 	if len(destination.In) == 0 || mustStop || cm.Stop {
 		paths.InsertPaths(newPath, mustStop, cm.Stop, cm.Options.Simplify)
+		// Report progress
+		if cm.Match.SSA.ProgressChan != nil {
+			cm.Match.SSA.ProgressChan <- len(paths.Paths)
+		}
 		cm.Stop = false
 		return
 	}
@@ -143,6 +152,10 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	// Avoids recursion within a single callpath
 	if visited[destination.ID] {
 		paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
+		// Report progress
+		if cm.Match.SSA.ProgressChan != nil {
+			cm.Match.SSA.ProgressChan <- len(paths.Paths)
+		}
 		return
 	}
 	visited[destination.ID] = true
@@ -185,6 +198,10 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 	}
 	if allOutsideMainPkg {
 		paths.InsertPaths(newPath, mustStop, cm.Stop, cm.Options.Simplify)
+		// Report progress
+		if cm.Match.SSA.ProgressChan != nil {
+			cm.Match.SSA.ProgressChan <- len(paths.Paths)
+		}
 		cm.Stop = false
 		return
 	}
@@ -196,6 +213,11 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []wallynode.WallyNo
 
 	pathLimited := false
 	for queue.Len() > 0 {
+		// Report queue size for progress tracking
+		if cm.Match.SSA.QueueSizeChan != nil {
+			cm.Match.SSA.QueueSizeChan <- queue.Len()
+		}
+
 		//printQueue(queue)
 		// we process the first node
 		bfsNodeElm := queue.Front()
@@ -209,17 +231,29 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []wallynode.WallyNo
 
 		if cm.Options.Limiter > None && currentNode.Func.Pos() == token.NoPos {
 			paths.InsertPaths(currentPath, false, false, cm.Options.Simplify)
+			// Report progress
+			if cm.Match.SSA.ProgressChan != nil {
+				cm.Match.SSA.ProgressChan <- len(paths.Paths)
+			}
 			continue
 		}
 
 		if cm.Options.Limiter > None && isMainFunc(currentNode) {
 			paths.InsertPaths(currentPath, false, false, cm.Options.Simplify)
+			// Report progress
+			if cm.Match.SSA.ProgressChan != nil {
+				cm.Match.SSA.ProgressChan <- len(paths.Paths)
+			}
 			continue
 		}
 
 		// Are we out of nodes for this currentNode, or have we reached the limit of funcs in a path?
 		if limitFuncsReached(currentPath, cm.Options) {
 			paths.InsertPaths(currentPath, true, false, cm.Options.Simplify)
+			// Report progress
+			if cm.Match.SSA.ProgressChan != nil {
+				cm.Match.SSA.ProgressChan <- len(paths.Paths)
+			}
 			continue
 		}
 
@@ -279,26 +313,51 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []wallynode.WallyNo
 		}
 		if allOutsideMainPkg && !allAlreadyInPath {
 			paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
+			// Report progress
+			if cm.Match.SSA.ProgressChan != nil {
+				cm.Match.SSA.ProgressChan <- len(paths.Paths)
+			}
 			continue
 		}
 		if cm.Options.Filter != "" && allOutsideFilter {
 			paths.InsertPaths(newPath, false, true, cm.Options.Simplify)
+			// Report progress
+			if cm.Match.SSA.ProgressChan != nil {
+				cm.Match.SSA.ProgressChan <- len(paths.Paths)
+			}
 			continue
 		}
 		if allMismatchSite {
 			paths.InsertPaths(currentPath, false, false, cm.Options.Simplify)
+			// Report progress
+			if cm.Match.SSA.ProgressChan != nil {
+				cm.Match.SSA.ProgressChan <- len(paths.Paths)
+			}
 			continue
 		}
 		if allAlreadyInPath {
 			paths.InsertPaths(newPath, false, false, cm.Options.Simplify)
+			// Report progress
+			if cm.Match.SSA.ProgressChan != nil {
+				cm.Match.SSA.ProgressChan <- len(paths.Paths)
+			}
 		}
 	}
 
-	// Insert whataver is left by now
+	// Insert whatever is left by now
 	for e := queue.Front(); e != nil; e = e.Next() {
 		bfsNode := e.Value.(BFSNode)
 		paths.InsertPaths(bfsNode.Path, false, false, cm.Options.Simplify)
+		// Report progress
+		if cm.Match.SSA.ProgressChan != nil {
+			cm.Match.SSA.ProgressChan <- len(paths.Paths)
+		}
 		cm.Match.SSA.PathLimited = pathLimited
+	}
+
+	// Final queue size report (should be 0)
+	if cm.Match.SSA.QueueSizeChan != nil {
+		cm.Match.SSA.QueueSizeChan <- 0
 	}
 }
 

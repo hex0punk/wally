@@ -47,8 +47,16 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 
 		// User may decide they do not care if the package matches.
 		// It'd be worth adding a command to "take a guess" for potential routes
-		if fi.Package != ind.Package && ind.Package != "*" {
-			continue
+		if strings.Contains(ind.Package, "*") {
+			if len(ind.Package) > 1 {
+				if !strings.HasPrefix(fi.Package, ind.Package[:len(ind.Package)-2]) {
+					continue
+				}
+			}
+		} else {
+			if fi.Package != ind.Package {
+				continue
+			}
 		}
 
 		if strings.HasPrefix(ind.Function, "/") && strings.HasSuffix(ind.Function, "/") {
@@ -62,7 +70,7 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 				continue
 			}
 		} else {
-			if fi.Name != ind.Function {
+			if ind.Function != "*" && fi.Name != ind.Function {
 				continue
 			}
 		}
@@ -142,7 +150,7 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 
 	// TODO: maybe worth returning an error if we cannot get the signature, as we don't support
 	// anonymous functions and closures as targetted functions via indicators anyway
-	sig, _ := GetFuncSignature(funcIdent, info)
+	sig, err := GetFuncSignature(funcIdent, info)
 
 	return &FuncInfo{
 		Package: pkgPath.Path(),
@@ -150,7 +158,7 @@ func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {
 		//Type: nil,
 		Name:      funcName,
 		Signature: sig,
-	}, nil
+	}, err
 }
 
 func GetFuncSignature(expr ast.Expr, info *types.Info) (*types.Signature, error) {

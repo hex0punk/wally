@@ -2,6 +2,16 @@ package navigator
 
 import (
 	"fmt"
+	"go/ast"
+	"go/token"
+	"go/types"
+	"log"
+	"log/slog"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/hex0punk/wally/checker"
 	"github.com/hex0punk/wally/indicator"
 	"github.com/hex0punk/wally/logger"
@@ -12,9 +22,6 @@ import (
 	"github.com/hex0punk/wally/reporter"
 	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallylib/callmapper"
-	"go/ast"
-	"go/token"
-	"go/types"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/ctrlflow"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -28,12 +35,6 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"log"
-	"log/slog"
-	"os"
-	"strings"
-	"sync"
-	"time"
 )
 
 type Navigator struct {
@@ -265,6 +266,13 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		// Whether we are able to get params or not we have a match
 		funcMatch := match.NewRouteMatch(route.Id, funcInfo, pos)
 
+		// Check if routematch was already added (TEMP)
+		for _, rm := range results {
+			if rm.Hash == funcMatch.Hash {
+				return
+			}
+		}
+
 		for _, ind := range n.RouteIndicators {
 			if ind.Id != "" && ind.Id == funcMatch.IndicatorId {
 				for _, previousMatch := range n.RouteMatches {
@@ -284,20 +292,29 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		// Now try to get the params for methods, path, etc.
+		fmt.Println(funcMatch.Params, funcInfo.Signature)
 		funcMatch.Params = wallylib.See(funcInfo.Signature, ce, pass)
 		if val, ok := funcMatch.Params["method"]; ok {
-			parts := strings.Split(val, "/")
-			if len(parts) > 1 {
-				result := parts[len(parts)-1]
-				result = strings.Trim(result, "\"")
-				newId := len(n.RouteIndicators) + 1
-				n.RouteIndicators = append(n.RouteIndicators, indicator.Indicator{
-					Id:           fmt.Sprintf("%d", newId),
-					Package:      "*",
-					Function:     result,
-					MatchFilters: []string{pass.Pkg.Path()},
-					RootId:       funcMatch.MatchId,
-				})
+			fmt.Println("Method: ", val)
+			if true {
+				fmt.Println("match found")
+				parts := strings.Split(val, "/")
+				if len(parts) > 1 {
+					result := parts[len(parts)-1]
+					result = strings.Trim(result, "\"")
+					newId := len(n.RouteIndicators) + 1
+					n.RouteIndicators = append(n.RouteIndicators, indicator.Indicator{
+						Id:           fmt.Sprintf("%d", newId),
+						Package:      "*",
+						Function:     result,
+						MatchFilters: []string{pass.Pkg.Path()},
+						RootId:       funcMatch.MatchId,
+					})
+
+					fmt.Println("added new indicator: ", result)
+				}
+			} else {
+				return
 			}
 		}
 
@@ -352,8 +369,8 @@ func (n *Navigator) PassesExclusions(pos token.Position, pkg string) bool {
 		return true
 	}
 
-	for _, pkg := range n.Exclusions.Packages {
-		if pkg == pkg {
+	for _, excludedPkg := range n.Exclusions.Packages {
+		if excludedPkg == pkg {
 			return false
 		}
 	}
@@ -449,11 +466,54 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 			start := time.Now()
 			n.Logger.Debug("Solving paths for match", "match", routeMatch.Pos.String())
 
+			// Create a ticker to log every 5 seconds
+			ticker := time.NewTicker(5 * time.Second)
+			done := make(chan bool)
+
+			// Create channels to communicate progress data
+			progressChan := make(chan int)
+			queueSizeChan := make(chan int)
+
+			// Start logging goroutine
+			go func() {
+				var pathsFound int
+				var queueSize int
+				for {
+					select {
+					case <-ticker.C:
+						if options.SearchAlg == callmapper.Bfs {
+							n.Logger.Debug("Still solving paths for match",
+								"match", routeMatch.Pos.String(),
+								"pathsFound", pathsFound,
+								"nodesInQueue", queueSize)
+						} else {
+							n.Logger.Debug("Still solving paths for match",
+								"match", routeMatch.Pos.String(),
+								"pathsFound", pathsFound)
+						}
+					case count := <-progressChan:
+						pathsFound = count
+					case size := <-queueSizeChan:
+						queueSize = size
+					case <-done:
+						ticker.Stop()
+						return
+					}
+				}
+			}()
+
+			// Make pathsCount variable available to our modified BFS/DFS implementations
+			n.RouteMatches[i].SSA.ProgressChan = progressChan
+			n.RouteMatches[i].SSA.QueueSizeChan = queueSizeChan
+
 			if options.SearchAlg == callmapper.Dfs {
 				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsDFS(routeMatch.SSA.BaseNode)
 			} else {
 				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(routeMatch.SSA.BaseNode)
 			}
+
+			// Signal logging goroutine to stop
+			done <- true
 
 			duration := time.Since(start)
 			n.Logger.Debug("Solved paths for match", "match", routeMatch.Pos.String(), "numPaths", len(n.RouteMatches[i].SSA.CallPaths.Paths), "duration", duration)

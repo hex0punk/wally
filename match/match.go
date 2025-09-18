@@ -1,13 +1,16 @@
 package match
 
 import (
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"go/token"
+	"go/types"
+
 	"github.com/google/uuid"
 	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallynode"
-	"go/token"
-	"go/types"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 )
@@ -21,6 +24,7 @@ type RouteMatch struct {
 	Signature   *types.Signature
 	EnclosedBy  string
 	Module      string
+	Hash        string
 	SSA         *SSAContext
 	ParentMatch *RouteMatch
 }
@@ -34,6 +38,9 @@ type SSAContext struct {
 	SSAFunc        *ssa.Function
 	TargetPos      string
 	BaseNode       *callgraph.Node
+	// Channels for progress reporting
+	ProgressChan  chan int
+	QueueSizeChan chan int
 }
 
 type CallPaths struct {
@@ -99,11 +106,14 @@ func (cp *CallPaths) Print() {
 }
 
 func NewRouteMatch(indicatorId string, funcInfo *wallylib.FuncInfo, pos token.Position) RouteMatch {
+	objBytes, _ := json.Marshal(fmt.Sprintf("%s.%s", funcInfo.Pkg, funcInfo.Name))
+
 	return RouteMatch{
 		MatchId:     uuid.New().String(),
 		IndicatorId: indicatorId,
 		Pos:         pos,
 		SSA:         &SSAContext{},
+		Hash:        hash(objBytes),
 		FuncInfo:    funcInfo,
 	}
 }
@@ -160,4 +170,14 @@ func (r *RouteMatch) MarshalJSON() ([]byte, error) {
 		PathLimited: r.SSA.PathLimited,
 		Paths:       resPaths,
 	})
+}
+
+func hash(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+
+	h := sha1.New()
+	h.Write(b)
+	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
