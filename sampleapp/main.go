@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/hex0punk/wally/sampleapp/bound"
 	"github.com/hex0punk/wally/sampleapp/printer"
 	"github.com/hex0punk/wally/sampleapp/safe"
 )
@@ -14,6 +15,19 @@ func main() {
 	RunAll(word, idx)
 	ra := RunAll
 	ra(word, idx)
+	RunBound()
+}
+
+// RunBound exercises a bound method value: h.Handle is not called directly,
+// it is taken as a func value ($bound synthetic wrapper) and invoked later
+// via Dispatch, one level removed from its creation site.
+func RunBound() {
+	h := &bound.Handler{Name: "h1"}
+	Dispatch(h.Handle, "hello")
+}
+
+func Dispatch(f func(string), msg string) {
+	f(msg)
 }
 
 func RunAll(str string, idx int) {

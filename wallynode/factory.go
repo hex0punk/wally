@@ -21,9 +21,13 @@ func (f *WallyNodeFactory) CreateWallyNode(nodeStr string, caller *callgraph.Nod
 	recoverable := false
 	if nodeStr == "" {
 		if site == nil {
-			nodeStr = fmt.Sprintf("Func: %s.[%s] %s", caller.Func.Pkg.Pkg.Name(), caller.Func.Name(), wallylib.GetFormattedPos(caller.Func.Package(), caller.Func.Pos()))
+			pkgName := ""
+			if pkg := caller.Func.Package(); pkg != nil {
+				pkgName = pkg.Pkg.Name()
+			}
+			nodeStr = fmt.Sprintf("Func: %s.[%s] %s", pkgName, caller.Func.Name(), wallylib.GetFormattedPosFromFunc(caller.Func, caller.Func.Pos()))
 		} else {
-			fp := wallylib.GetFormattedPos(caller.Func.Package(), site.Pos())
+			fp := wallylib.GetFormattedPosFromFunc(caller.Func, site.Pos())
 			recoverable = IsRecoverable(caller, f.CallgraphNodes)
 			nodeStr = GetNodeString(fp, caller, recoverable)
 		}
