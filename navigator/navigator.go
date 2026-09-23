@@ -79,7 +79,29 @@ func mainPackages(pkgs []*ssa.Package) ([]*ssa.Package, error) {
 	return mains, nil
 }
 
+// MapRoutes loads the target packages, builds the SSA callgraph (if
+// n.RunSSA), and finds all call sites matching n.RouteIndicators. This is
+// the one-shot entry point used by the `map`/`map search` commands.
+//
+// It is equivalent to calling Build followed by FindMatches. Callers that
+// need to issue more than one query against the same codebase (e.g. an
+// interactive shell) should call Build once and FindMatches repeatedly
+// instead: Build does the expensive part (package loading, type-checking,
+// SSA construction, and callgraph generation), while FindMatches only
+// re-walks the already-parsed ASTs looking for the current
+// n.RouteIndicators, which is comparatively cheap.
 func (n *Navigator) MapRoutes(paths []string) {
+	n.Build(paths)
+	n.FindMatches()
+}
+
+// Build loads the target packages and, if n.RunSSA, constructs the SSA
+// program and its callgraph (per n.CallgraphAlg). This is the expensive,
+// one-time setup step: package loading/type-checking and callgraph
+// construction dominate wally's runtime on a large codebase. Callers that
+// need to run more than one query against the same codebase should call
+// Build once and then call FindMatches repeatedly.
+func (n *Navigator) Build(paths []string) {
 	if len(paths) == 0 {
 		paths = append(paths, "./...")
 	}
@@ -118,8 +140,15 @@ func (n *Navigator) MapRoutes(paths []string) {
 		}
 		n.Logger.Info("SSA callgraph generated successfully")
 	}
+}
 
+// FindMatches walks the already-loaded packages' ASTs (see Build) looking
+// for call sites matching n.RouteIndicators, appending to n.RouteMatches.
+// Callers that want to issue a fresh query should reset n.RouteIndicators
+// and n.RouteMatches before calling this again.
+func (n *Navigator) FindMatches() {
 	n.Logger.Info("Finding functions via AST parsing")
+	pkgs := n.Packages
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
 	var analyzer = &analysis.Analyzer{
 		Name:     "wally",
