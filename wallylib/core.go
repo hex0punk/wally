@@ -344,7 +344,18 @@ func GetFunctionFromSite(site ssa.CallInstruction) *ssa.Function {
 }
 
 func IsClosure(function *ssa.Function) bool {
-	return strings.Contains(function.Name(), "$")
+	return strings.Contains(function.Name(), "$") && !IsBoundFunc(function)
+}
+
+// IsBoundFunc reports whether function is a synthetic wrapper the SSA builder
+// generates for a bound method value (e.g. `f := obj.Method`). These wrappers
+// have no lexical parent and no *ssa.Package (Func.Package() is nil), so they
+// look like closures (their name contains "$") but must not be treated as one:
+// walking Parent() on them panics. They also lack a source position, so
+// callers must fall back to the call site's position instead of the
+// function's own position.
+func IsBoundFunc(function *ssa.Function) bool {
+	return strings.HasSuffix(function.Name(), "$bound")
 }
 
 func getModuleName(pkg *packages.Package) (string, error) {

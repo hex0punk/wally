@@ -142,7 +142,7 @@ func (cm *CallMapper) AllPathsDFS(s *callgraph.Node) *match.CallPaths {
 }
 
 func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, path []wallynode.WallyNode, paths *match.CallPaths, site ssa.CallInstruction) {
-	if cm.Options.Limiter > None && destination.Func.Pos() == token.NoPos {
+	if cm.Options.Limiter > None && destination.Func.Pos() == token.NoPos && !wallylib.IsBoundFunc(destination.Func) {
 		return
 	}
 	newPath := cm.appendNodeToPath(destination, path, site)
@@ -178,7 +178,7 @@ func (cm *CallMapper) DFS(destination *callgraph.Node, visited map[int]bool, pat
 		fnT, newPath = cm.handleClosure(destination, newPath)
 	}
 	for _, e := range fnT.In {
-		if e.Caller.Func.Package() == nil {
+		if !callerIsTraversable(e.Caller.Func) {
 			continue
 		}
 		if paths.Paths != nil && cm.Options.MaxPaths > 0 && len(paths.Paths) >= cm.Options.MaxPaths {
@@ -227,7 +227,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []wallynode.WallyNo
 		currentPath := current.Path
 		//printQueue(queue)
 
-		if cm.Options.Limiter > None && currentNode.Func.Pos() == token.NoPos {
+		if cm.Options.Limiter > None && currentNode.Func.Pos() == token.NoPos && !wallylib.IsBoundFunc(currentNode.Func) {
 			paths.InsertPaths(currentPath, false, false, cm.Options.Simplify)
 			continue
 		}
@@ -254,7 +254,7 @@ func (cm *CallMapper) BFS(start *callgraph.Node, initialPath []wallynode.WallyNo
 		allOutsideFilter, allOutsideMainPkg, allAlreadyInPath := true, true, true
 		allMismatchSite := true
 		for _, e := range iterNode.In {
-			if e.Caller.Func.Package() == nil {
+			if !callerIsTraversable(e.Caller.Func) {
 				continue
 			}
 			if e.Site == nil {
@@ -337,12 +337,21 @@ func mainPkgLimited(currentNode *callgraph.Node, e *callgraph.Edge, options Opti
 	}
 
 	// This occurs if we are at init
-	if currentNode.Func.Pos() == token.NoPos {
+	if currentNode.Func.Pos() == token.NoPos && !wallylib.IsBoundFunc(currentNode.Func) {
 		return true
 	}
 
-	currentPkg := currentNode.Func.Package().Pkg
-	callerPkg := e.Caller.Func.Package().Pkg
+	currentPkgSSA := currentNode.Func.Package()
+	callerPkgSSA := e.Caller.Func.Package()
+	if currentPkgSSA == nil || callerPkgSSA == nil {
+		// One side is a synthetic function (e.g. a bound method value, see
+		// wallylib.IsBoundFunc) with no package of its own. The main-vs-not-main
+		// heuristics below don't apply; let position/filter checks decide instead.
+		return false
+	}
+
+	currentPkg := currentPkgSSA.Pkg
+	callerPkg := callerPkgSSA.Pkg
 
 	if currentPkg.Name() != "main" {
 		return false
@@ -376,10 +385,26 @@ func shouldSkipNode(e *callgraph.Edge, destination *callgraph.Node, options Opti
 }
 
 func passesFilter(node *callgraph.Node, filter string) bool {
-	if node.Func != nil && node.Func.Pkg != nil {
+	if node.Func == nil {
+		return false
+	}
+	if wallylib.IsBoundFunc(node.Func) {
+		// Bound method values have no package of their own to match against
+		// filter; let them through so the path they're part of isn't dropped.
+		return true
+	}
+	if node.Func.Pkg != nil {
 		return strings.HasPrefix(node.Func.Pkg.Pkg.Path(), filter) || node.Func.Pkg.Pkg.Path() == "main"
 	}
 	return false
+}
+
+// callerIsTraversable reports whether a caller edge should be walked further.
+// Most synthetic functions (Func.Package() == nil) are skipped as noise, but
+// bound method value wrappers (see wallylib.IsBoundFunc) represent a real,
+// user-written call path and must not be silently dropped.
+func callerIsTraversable(function *ssa.Function) bool {
+	return function.Package() != nil || wallylib.IsBoundFunc(function)
 }
 
 func (cm *CallMapper) callerInPath(e *callgraph.Edge, paths []wallynode.WallyNode) bool {

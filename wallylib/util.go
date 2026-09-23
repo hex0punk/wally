@@ -58,3 +58,20 @@ func GetFormattedPos(pkg *ssa.Package, pos token.Pos) string {
 	relPath, _ := filepath.Rel(currentPath, p.Filename)
 	return fmt.Sprintf("%s:%d:%d", relPath, p.Line, p.Column)
 }
+
+// GetFormattedPosFromFunc formats a position using function.Prog.Fset rather
+// than function.Package().Prog.Fset, so it works for synthetic functions
+// (e.g. bound method wrappers, see IsBoundFunc) whose Package() is nil. It
+// prefers the function's own position when it has one, falling back to pos
+// (typically the call site) otherwise.
+func GetFormattedPosFromFunc(function *ssa.Function, pos token.Pos) string {
+	fs := function.Prog.Fset
+	target := pos
+	if function.Pos() != token.NoPos {
+		target = function.Pos()
+	}
+	p := fs.Position(target)
+	currentPath, _ := os.Getwd()
+	relPath, _ := filepath.Rel(currentPath, p.Filename)
+	return fmt.Sprintf("%s:%d:%d", relPath, p.Line, p.Column)
+}
