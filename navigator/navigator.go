@@ -530,30 +530,28 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	wg.Wait()
 }
 
-// verifyCallPathImports flags, via wallylib.PackageImportsTransitively, any
-// path whose outermost caller has no import chain at all to the matched
-// target's package. See CallPath.ImportUnverified for why this matters: cha
-// and vta can both resolve a call through a widely-implemented interface
-// (grpc.ClientConnInterface.Invoke being the case that motivated this) by
-// connecting call sites that share no real import relationship.
+// verifyCallPathImports checks, hop by hop, whether each edge in every
+// found call path is backed by a real, direct package import in the
+// correct direction -- and records how deep from the target that holds
+// (see CallPath.ConfirmedDepth). This exists because cha and vta can both
+// resolve a call through a widely-implemented interface (the motivating
+// case: grpc.ClientConnInterface.Invoke, satisfied by every generated gRPC
+// client) by connecting call sites that share no real import relationship
+// at all -- producing a path that looks real but is a callgraph
+// over-approximation artifact.
 //
-// Known limitation, deliberately not "fixed": with a permissive
-// --limiter-mode, a real path can continue past the caller a user actually
-// cares about into generic shared framework/bootstrap code (pulled in via
-// expandToModuleClosure) that itself doesn't import the caller -- this
-// check will flag that path even though the real relationship in the
-// middle of the chain is genuine. A fix that instead anchors on the first
-// --paths-requested frame (rather than the true outermost one) was tried
-// and reverted: it fixed this case but broke already-correct detection of
-// several real false positives, because when the *actually* over-connected
-// frame isn't itself in --paths, that approach can latch onto an unrelated
-// --paths-requested package elsewhere in the same bogus chain and clear it
-// incorrectly. A false negative here is worse than a false positive for a
-// security tool, so simple-and-occasionally-over-cautious was kept over
-// clever-and-sometimes-wrong. A principled fix would verify each adjacent
-// pair of frames has a real, correctly-directed import relationship and
-// anchor at the outermost point where that holds, rather than checking
-// either absolute endpoint -- not attempted here, left for later.
+// A per-hop check (rather than one aggregate "is there some transitive
+// path" check on the outermost frame alone) is what makes this precise
+// enough to handle both directions of a case that matters in practice: a
+// genuinely fabricated single-hop dispatch (fails immediately, at hop 0)
+// and a real multi-hop chain that happens to have generic shared
+// framework/bootstrap code prepended ahead of its real entry point by a
+// *different* instance of the same over-approximation (the inner hops
+// confirm; only the outer, decorative ones don't). Trying to anchor on a
+// single frame -- either the true outermost one, or a heuristically-chosen
+// one -- can't distinguish these two shapes correctly at the same time; see
+// the reverted attempt in this repo's history for a concrete case where a
+// single-frame heuristic fixed one shape and broke the other.
 func (n *Navigator) verifyCallPathImports(routeMatch match.RouteMatch, callPaths *match.CallPaths) {
 	if callPaths == nil || routeMatch.SSA.EnclosedByFunc == nil {
 		return
@@ -563,22 +561,36 @@ func (n *Navigator) verifyCallPathImports(routeMatch match.RouteMatch, callPaths
 		return
 	}
 	targetPath := targetPkg.Pkg.Path()
+	idx := wallylib.NewPackageIndex(n.Packages)
 
 	for _, path := range callPaths.Paths {
-		if len(path.Nodes) == 0 {
-			continue
+		path.VerificationAttempted = true
+		calleePath := targetPath
+		depth := 0
+		for _, node := range path.Nodes {
+			caller := node.Caller
+			if caller == nil || caller.Func == nil {
+				// Can't resolve this hop's caller at all (shouldn't happen
+				// in practice); fail open by treating it as confirmed
+				// rather than truncating a path we can't actually assess.
+				depth++
+				calleePath = ""
+				continue
+			}
+			callerPkg := caller.Func.Package()
+			if callerPkg == nil || callerPkg.Pkg == nil {
+				depth++
+				calleePath = ""
+				continue
+			}
+			callerPath := callerPkg.Pkg.Path()
+			if !idx.DirectlyImports(callerPath, calleePath) {
+				break
+			}
+			depth++
+			calleePath = callerPath
 		}
-		outer := path.Nodes[len(path.Nodes)-1].Caller
-		if outer == nil || outer.Func == nil {
-			continue
-		}
-		callerPkg := outer.Func.Package()
-		if callerPkg == nil || callerPkg.Pkg == nil {
-			continue
-		}
-		if !wallylib.PackageImportsTransitively(n.Packages, callerPkg.Pkg.Path(), targetPath) {
-			path.ImportUnverified = true
-		}
+		path.ConfirmedDepth = depth
 	}
 }
 

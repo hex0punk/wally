@@ -65,13 +65,20 @@ func PrintMach(match match.RouteMatch) {
 			if paths.Recoverable {
 				fmt.Printf(" (RECOVERABLE)")
 			}
-			if paths.ImportUnverified {
-				fmt.Printf(" (!! NO IMPORT PATH FOUND caller->target -- likely a cha/vta false positive from a widely-implemented interface, verify against source before trusting this !!)")
+			unconfirmedCount := len(paths.Nodes) - paths.ConfirmedDepth
+			if paths.VerificationAttempted && paths.ConfirmedDepth == 0 && len(paths.Nodes) > 0 {
+				fmt.Printf(" (!! NO IMPORT PATH FOUND for even the call into the target -- likely a cha/vta false positive from a widely-implemented interface, verify against source before trusting this !!)")
+			} else if paths.VerificationAttempted && unconfirmedCount > 0 {
+				fmt.Printf(" (%d outer frame(s) beyond the [unconfirmed] marker below have no direct import to what they supposedly call -- likely generic/shared framework code a cha/vta over-approximation attached, not necessarily fake, but not confirmed either)", unconfirmedCount)
 			}
 			fmt.Printf(":\n")
 
 			for x := len(paths.Nodes) - 1; x >= 0; x-- {
-				fmt.Printf("		%s --->\n", paths.Nodes[x].NodeString)
+				marker := ""
+				if paths.VerificationAttempted && x >= paths.ConfirmedDepth {
+					marker = "[unconfirmed] "
+				}
+				fmt.Printf("		%s%s --->\n", marker, paths.Nodes[x].NodeString)
 			}
 			fmt.Printf("			%s\n", match.SSA.TargetPos)
 		}

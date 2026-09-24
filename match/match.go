@@ -42,14 +42,34 @@ type CallPath struct {
 	NodeLimited   bool
 	FilterLimited bool
 	Recoverable   bool
-	// ImportUnverified is set by Navigator.SolveCallPaths when the outermost
-	// caller's package has no import chain at all to the matched target's
-	// package. A cha/vta-derived path can exist without one, if the call was
-	// resolved through a widely-implemented interface (see
-	// wallylib.PackageImportsTransitively) rather than a genuine call chain.
-	// Zero value (false) means either it checked out or verification wasn't
-	// attempted -- this is a best-effort sanity flag, not proof either way.
-	ImportUnverified bool
+	// ConfirmedDepth is set by Navigator.SolveCallPaths: the number of
+	// innermost hops (starting from the call into the matched target) that
+	// checked out as a direct, correctly-directed package import -- i.e.
+	// syntactically real, not just plausible. Nodes are ordered
+	// innermost-first (Nodes[0] is closest to the target), so
+	// Nodes[:ConfirmedDepth] is the part of the path backed by real
+	// imports at every hop.
+	//
+	//   - ConfirmedDepth == len(Nodes): the entire path checked out, hop by
+	//     hop. No caveat needed.
+	//   - 0 < ConfirmedDepth < len(Nodes): the inner part is real, but the
+	//     path continues further out into frames with no direct import to
+	//     what they supposedly call -- often generic shared framework/
+	//     bootstrap code a cha/vta over-approximation attached, not
+	//     necessarily a fake relationship. Report the confirmed inner
+	//     portion; treat the rest as an unconfirmed, likely-decorative
+	//     prefix rather than proof the whole path is fake.
+	//   - ConfirmedDepth == 0: not even the direct call into the target
+	//     holds up -- a strong signal the whole path is a callgraph
+	//     over-approximation artifact (e.g. a call resolved through a
+	//     widely-implemented interface to an unrelated implementation),
+	//     not a real relationship.
+	//
+	// Zero value (0) also means verification wasn't attempted at all (e.g.
+	// no packages were loaded to check against) -- distinguish that case
+	// from a genuine ConfirmedDepth of 0 using VerificationAttempted.
+	ConfirmedDepth        int
+	VerificationAttempted bool
 }
 
 func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, filterLimited bool, simplify bool) {
