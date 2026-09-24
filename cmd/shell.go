@@ -28,6 +28,7 @@ var (
 	shellSkipDefault  bool
 	shellExcludePkgs  []string
 	shellExcludePos   []string
+	shellNoAutoDeps   bool
 )
 
 var shellCmd = &cobra.Command{
@@ -55,6 +56,7 @@ func init() {
 	shellCmd.PersistentFlags().StringVar(&shellCallgraphAlg, "callgraph-alg", "cha", "cha || rta || vta || static")
 	shellCmd.PersistentFlags().StringSliceVar(&shellExcludePkgs, "exclude-pkg", []string{}, "Comma separated list of packages to exclude")
 	shellCmd.PersistentFlags().StringSliceVar(&shellExcludePos, "exclude-pos", []string{}, "Comma separated list of position suffixes used for filtering the selected function call matches")
+	shellCmd.PersistentFlags().BoolVar(&shellNoAutoDeps, "no-auto-deps", false, "Disable automatic expansion of the SSA build set to the same-module transitive closure of --paths. Only set this if --paths already lists every package a call path might route through; otherwise chains through an unlisted shared/internal package will silently look like a dead end.")
 }
 
 func runShell(cmd *cobra.Command, args []string) {
@@ -66,6 +68,7 @@ func runShell(cmd *cobra.Command, args []string) {
 	nav := navigator.NewNavigator(verbose, preloaded)
 	nav.RunSSA = true
 	nav.CallgraphAlg = shellCallgraphAlg
+	nav.NoAutoDeps = shellNoAutoDeps
 	nav.Exclusions = navigator.Exclusions{
 		Packages:    shellExcludePkgs,
 		PosSuffixes: shellExcludePos,
