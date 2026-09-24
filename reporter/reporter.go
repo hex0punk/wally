@@ -65,6 +65,9 @@ func PrintMach(match match.RouteMatch) {
 			if paths.Recoverable {
 				fmt.Printf(" (RECOVERABLE)")
 			}
+			if paths.ImportUnverified {
+				fmt.Printf(" (!! NO IMPORT PATH FOUND caller->target -- likely a cha/vta false positive from a widely-implemented interface, verify against source before trusting this !!)")
+			}
 			fmt.Printf(":\n")
 
 			for x := len(paths.Nodes) - 1; x >= 0; x-- {

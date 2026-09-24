@@ -42,6 +42,14 @@ type CallPath struct {
 	NodeLimited   bool
 	FilterLimited bool
 	Recoverable   bool
+	// ImportUnverified is set by Navigator.SolveCallPaths when the outermost
+	// caller's package has no import chain at all to the matched target's
+	// package. A cha/vta-derived path can exist without one, if the call was
+	// resolved through a widely-implemented interface (see
+	// wallylib.PackageImportsTransitively) rather than a genuine call chain.
+	// Zero value (false) means either it checked out or verification wasn't
+	// attempted -- this is a best-effort sanity flag, not proof either way.
+	ImportUnverified bool
 }
 
 func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, filterLimited bool, simplify bool) {

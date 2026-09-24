@@ -520,6 +520,7 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 			} else {
 				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
 			}
+			n.verifyCallPathImports(routeMatch, n.RouteMatches[i].SSA.CallPaths)
 
 			duration := time.Since(start)
 			n.Logger.Debug("Solved paths for match", "match", routeMatch.Pos.String(), "numPaths", len(n.RouteMatches[i].SSA.CallPaths.Paths), "duration", duration)
@@ -527,6 +528,40 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	}
 
 	wg.Wait()
+}
+
+// verifyCallPathImports flags, via wallylib.PackageImportsTransitively, any
+// path whose outermost caller has no import chain at all to the matched
+// target's package. See CallPath.ImportUnverified for why this matters: cha
+// and vta can both resolve a call through a widely-implemented interface
+// (grpc.ClientConnInterface.Invoke being the case that motivated this) by
+// connecting call sites that share no real import relationship.
+func (n *Navigator) verifyCallPathImports(routeMatch match.RouteMatch, callPaths *match.CallPaths) {
+	if callPaths == nil || routeMatch.SSA.EnclosedByFunc == nil {
+		return
+	}
+	targetPkg := routeMatch.SSA.EnclosedByFunc.Package()
+	if targetPkg == nil || targetPkg.Pkg == nil {
+		return
+	}
+	targetPath := targetPkg.Pkg.Path()
+
+	for _, path := range callPaths.Paths {
+		if len(path.Nodes) == 0 {
+			continue
+		}
+		outer := path.Nodes[len(path.Nodes)-1].Caller
+		if outer == nil || outer.Func == nil {
+			continue
+		}
+		callerPkg := outer.Func.Package()
+		if callerPkg == nil || callerPkg.Pkg == nil {
+			continue
+		}
+		if !wallylib.PackageImportsTransitively(n.Packages, callerPkg.Pkg.Path(), targetPath) {
+			path.ImportUnverified = true
+		}
+	}
 }
 
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {
