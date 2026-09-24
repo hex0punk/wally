@@ -2,64 +2,19 @@ package wallylib
 
 import "golang.org/x/tools/go/packages"
 
-// PackageImportsTransitively reports whether the package at fromPath
-// transitively imports the package at toPath, by walking the import graph
-// rooted at roots (typically navigator.Navigator.Packages, i.e. every
-// package wally's SSA build covers).
-//
-// This exists to sanity-check a callgraph-derived call path: cha and vta
-// both resolve a call through a widely-implemented interface (the leading
-// example being grpc.ClientConnInterface.Invoke, which every generated gRPC
-// client satisfies) by considering ANY type satisfying that interface a
-// possible dispatch target, not just the one actually reachable from a given
-// call site. In a codebase where many services share that interface, this
-// produces call paths between packages that share no import relationship at
-// all -- confirmed in practice tracing a single target's Invoke call across
-// ~15 unrelated services, several of which had zero literal reference to the
-// target package anywhere in their source, under both cha and vta.
-//
-// Returns true (i.e. "can't rule it out, don't flag it") when either path
-// isn't found in roots at all -- this check is a best-effort sanity filter
-// on top of the callgraph, not a replacement for it, and should fail open
-// rather than risk flagging legitimate results it can't fully resolve (e.g.
-// a path crossing into the standard library or a module wally wasn't told
-// to load).
-func PackageImportsTransitively(roots []*packages.Package, fromPath, toPath string) bool {
-	if fromPath == "" || toPath == "" || fromPath == toPath {
-		return true
-	}
-
-	index := indexPackagesByPath(roots)
-	start, ok := index[fromPath]
-	if !ok {
-		return true
-	}
-	if _, ok := index[toPath]; !ok {
-		return true
-	}
-
-	seen := make(map[string]bool)
-	var visit func(p *packages.Package) bool
-	visit = func(p *packages.Package) bool {
-		if p == nil || seen[p.PkgPath] {
-			return false
-		}
-		seen[p.PkgPath] = true
-		if p.PkgPath == toPath {
-			return true
-		}
-		for _, imp := range p.Imports {
-			if visit(imp) {
-				return true
-			}
-		}
-		return false
-	}
-	return visit(start)
+// PackageIndex is a flattened, by-path lookup over a package import graph,
+// built once (see NewPackageIndex) and queried cheaply many times -- e.g.
+// once per hop of every call path found in a session, which would be far
+// too expensive to rebuild the underlying walk for on every call.
+type PackageIndex struct {
+	byPath map[string]*packages.Package
 }
 
-func indexPackagesByPath(roots []*packages.Package) map[string]*packages.Package {
-	index := make(map[string]*packages.Package)
+// NewPackageIndex flattens the import graph rooted at roots (typically
+// navigator.Navigator.Packages, i.e. every package wally's SSA build
+// covers) into a single path -> package lookup.
+func NewPackageIndex(roots []*packages.Package) *PackageIndex {
+	byPath := make(map[string]*packages.Package)
 	seen := make(map[*packages.Package]bool)
 	var visit func(p *packages.Package)
 	visit = func(p *packages.Package) {
@@ -67,7 +22,7 @@ func indexPackagesByPath(roots []*packages.Package) map[string]*packages.Package
 			return
 		}
 		seen[p] = true
-		index[p.PkgPath] = p
+		byPath[p.PkgPath] = p
 		for _, imp := range p.Imports {
 			visit(imp)
 		}
@@ -75,5 +30,38 @@ func indexPackagesByPath(roots []*packages.Package) map[string]*packages.Package
 	for _, p := range roots {
 		visit(p)
 	}
-	return index
+	return &PackageIndex{byPath: byPath}
+}
+
+// DirectlyImports reports whether the package at fromPath imports the
+// package at toPath directly (one hop) -- i.e. whether a literal function
+// call from a fromPath function to a toPath function is even syntactically
+// possible, absent same-package calls. Returns true (i.e. "can't rule it
+// out") if either package isn't in the index, so this fails open rather
+// than flagging something it can't fully resolve.
+//
+// This is the primitive verifyCallPathImports (navigator.go) uses to check
+// each hop of a callgraph-derived path individually -- see its doc comment
+// for why a single aggregate "is there some transitive path" check isn't
+// precise enough to both catch a fully-fabricated call (cha/vta resolving a
+// widely-implemented interface method to an unrelated implementation) and
+// avoid flagging a real multi-hop chain that happens to have generic
+// framework/bootstrap noise prepended ahead of its real entry point.
+func (idx *PackageIndex) DirectlyImports(fromPath, toPath string) bool {
+	if fromPath == "" || toPath == "" || fromPath == toPath {
+		return true
+	}
+	from, ok := idx.byPath[fromPath]
+	if !ok {
+		return true
+	}
+	if _, ok := idx.byPath[toPath]; !ok {
+		return true
+	}
+	for _, imp := range from.Imports {
+		if imp.PkgPath == toPath {
+			return true
+		}
+	}
+	return false
 }
