@@ -45,6 +45,15 @@ type Navigator struct {
 	Packages        []*packages.Package
 	CallgraphAlg    string
 	Exclusions      Exclusions
+	// NoAutoDeps disables automatic expansion of the SSA build set to the
+	// full same-module transitive closure of --paths (see
+	// expandToModuleClosure). Only set this if you've deliberately scoped
+	// --paths to include every package a call path might route through;
+	// otherwise a call chain through an unlisted shared/internal package
+	// (a helper library, a wrapper client, etc.) will silently look like a
+	// dead end, since wally only builds real SSA function bodies (and thus
+	// only traces call edges) for packages it was told to build.
+	NoAutoDeps bool
 }
 
 type Exclusions struct {
@@ -110,11 +119,18 @@ func (n *Navigator) Build(paths []string) {
 	n.Packages = pkgs
 
 	if n.RunSSA {
+		ssaBuildPkgs := pkgs
+		if !n.NoAutoDeps {
+			expanded := expandToModuleClosure(pkgs)
+			n.Logger.Info("Expanded SSA build set to same-module transitive closure", "roots", len(pkgs), "total", len(expanded))
+			ssaBuildPkgs = expanded
+		}
+
 		n.Logger.Info("Building SSA program")
 		n.SSA = &SSA{
 			Packages: []*ssa.Package{},
 		}
-		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
+		prog, ssaPkgs := ssautil.AllPackages(ssaBuildPkgs, ssa.InstantiateGenerics)
 		n.SSA.Packages = ssaPkgs
 		n.SSA.Program = prog
 		prog.Build()
@@ -203,6 +219,59 @@ func (n *Navigator) FindMatches() {
 			}
 		}
 	}
+}
+
+// expandToModuleClosure walks the import graph of roots (the packages
+// packages.Load returned for the given --paths) and returns roots plus
+// every transitively-imported package that belongs to the same Go module(s)
+// as the roots.
+//
+// This matters because ssautil.AllPackages only builds real SSA function
+// bodies (the ones the callgraph can walk through) for the packages it's
+// explicitly given; packages reachable only via .Imports are otherwise
+// treated as external/bodyless. In practice, a target function is very
+// often reached through a shared internal helper/wrapper package that isn't
+// itself one of the cogs/services the caller thought to list in --paths
+// (e.g. cogA calls target via some/shared/client, and --paths only named
+// cogA) — without this expansion, that whole call chain silently looks like
+// a dead end instead of surfacing an error.
+//
+// Deliberately stops at module boundaries: expanding into every transitive
+// dependency including the standard library and third-party modules would
+// make the SSA build set (and its memory cost) balloon for no benefit, since
+// wally's targets are essentially always first-party code.
+func expandToModuleClosure(roots []*packages.Package) []*packages.Package {
+	rootModules := make(map[string]bool)
+	for _, p := range roots {
+		if p.Module != nil {
+			rootModules[p.Module.Path] = true
+		}
+	}
+
+	seen := make(map[*packages.Package]bool)
+	var result []*packages.Package
+
+	var visit func(p *packages.Package)
+	visit = func(p *packages.Package) {
+		if p == nil || seen[p] {
+			return
+		}
+		seen[p] = true
+
+		inRootModule := p.Module != nil && rootModules[p.Module.Path]
+		if !inRootModule {
+			return
+		}
+		result = append(result, p)
+
+		for _, imp := range p.Imports {
+			visit(imp)
+		}
+	}
+	for _, p := range roots {
+		visit(p)
+	}
+	return result
 }
 
 func LoadPackages(paths []string) []*packages.Package {
