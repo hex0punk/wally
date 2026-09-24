@@ -536,6 +536,24 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 // and vta can both resolve a call through a widely-implemented interface
 // (grpc.ClientConnInterface.Invoke being the case that motivated this) by
 // connecting call sites that share no real import relationship.
+//
+// Known limitation, deliberately not "fixed": with a permissive
+// --limiter-mode, a real path can continue past the caller a user actually
+// cares about into generic shared framework/bootstrap code (pulled in via
+// expandToModuleClosure) that itself doesn't import the caller -- this
+// check will flag that path even though the real relationship in the
+// middle of the chain is genuine. A fix that instead anchors on the first
+// --paths-requested frame (rather than the true outermost one) was tried
+// and reverted: it fixed this case but broke already-correct detection of
+// several real false positives, because when the *actually* over-connected
+// frame isn't itself in --paths, that approach can latch onto an unrelated
+// --paths-requested package elsewhere in the same bogus chain and clear it
+// incorrectly. A false negative here is worse than a false positive for a
+// security tool, so simple-and-occasionally-over-cautious was kept over
+// clever-and-sometimes-wrong. A principled fix would verify each adjacent
+// pair of frames has a real, correctly-directed import relationship and
+// anchor at the outermost point where that holds, rather than checking
+// either absolute endpoint -- not attempted here, left for later.
 func (n *Navigator) verifyCallPathImports(routeMatch match.RouteMatch, callPaths *match.CallPaths) {
 	if callPaths == nil || routeMatch.SSA.EnclosedByFunc == nil {
 		return
