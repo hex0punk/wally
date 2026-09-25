@@ -54,6 +54,12 @@ type Navigator struct {
 	// dead end, since wally only builds real SSA function bodies (and thus
 	// only traces call edges) for packages it was told to build.
 	NoAutoDeps bool
+	// pkgIndex resolves package-scope type declarations for --recv-type's
+	// interface-satisfaction fallback (see wallylib.FuncInfo.matchReceiver).
+	// Built once in FindMatches, since building it walks the full loaded
+	// import graph -- too expensive to redo per AST node during the walk
+	// that calls Match for every candidate.
+	pkgIndex *wallylib.PackageIndex
 }
 
 type Exclusions struct {
@@ -165,6 +171,9 @@ func (n *Navigator) Build(paths []string) {
 func (n *Navigator) FindMatches() {
 	n.Logger.Info("Finding functions via AST parsing")
 	pkgs := n.Packages
+	if n.pkgIndex == nil {
+		n.pkgIndex = wallylib.NewPackageIndex(n.Packages)
+	}
 	// TODO: No real need to use ctrlflow.Analyzer if using SSA
 	var analyzer = &analysis.Analyzer{
 		Name:     "wally",
@@ -366,7 +375,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 
-			route := funcInfo.Match(n.RouteIndicators)
+			route := funcInfo.Match(n.RouteIndicators, n.pkgIndex)
 			if route == nil {
 				// Don't keep going deeper in the node if there are no matches by now?
 				return
@@ -467,7 +476,7 @@ func (n *Navigator) matchFuncValueRef(sel *ast.SelectorExpr, pass *analysis.Pass
 		}
 	}
 
-	route := funcInfo.Match(n.RouteIndicators)
+	route := funcInfo.Match(n.RouteIndicators, n.pkgIndex)
 	if route == nil {
 		return
 	}
