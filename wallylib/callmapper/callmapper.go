@@ -96,10 +96,22 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 	//	return []wallynode.WallyNode{}
 	//}
 
-	// TODO: No real reason for this to be here
 	siteStr := ""
 	if cm.Match.SSA.SSAInstruction == nil {
-		encStr = cm.Match.Pos.String()
+		// No ssa.CallInstruction exists for a bare function/method value
+		// reference (see Navigator.matchFuncValueRef) -- there's no call
+		// site to derive a formatted position from the way the branch
+		// below does for a real call, so fall back to the match's own
+		// already-resolved position instead. This previously reassigned
+		// encStr to a raw, unformatted cm.Match.Pos.String() and left
+		// TargetPos unset entirely (a blank final line in the reported
+		// path) -- encStr already correctly holds the enclosing
+		// function's own formatted node string from above and represents
+		// a different thing (where the search starts, not where the
+		// match is), so it's left alone here; only TargetPos (the
+		// match's own position) needs filling in.
+		siteStr = fmt.Sprintf("%s.[%s] %s", cm.Match.Indicator.Package, cm.Match.Indicator.Function, cm.Match.Pos.String())
+		cm.Match.SSA.TargetPos = siteStr
 	} else {
 		sitePkg := cm.Match.SSA.SSAInstruction.Parent().Pkg
 
