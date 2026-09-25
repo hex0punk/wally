@@ -632,6 +632,22 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	for i, routeMatch := range n.RouteMatches {
 		i, routeMatch := i, routeMatch
 
+		// A nil EnclosedByFunc means the enclosing-SSA-function lookup
+		// that produced this match (GetEnclosingFuncWithSSA(ForPos), in
+		// Run/matchFuncValueRef) simply didn't find one -- a legitimate,
+		// expected outcome for some match shapes, meant to just skip this
+		// match here. The map-lookup guard below is meant to express that,
+		// but can't on its own: golang.org/x/tools/go/callgraph.New(root)
+		// stores its synthetic root node under the nil key too (root may
+		// itself be nil -- cha's builder does exactly that), so
+		// Nodes[nil] is a real, non-nil entry whenever CHA built this
+		// graph. Without this explicit check, a nil EnclosedByFunc slips
+		// past the map-lookup guard, reaches AllPathsDFS/BFS, and panics
+		// the first time anything calls a method on it.
+		if routeMatch.SSA.EnclosedByFunc == nil {
+			continue
+		}
+
 		if n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc] == nil {
 			continue
 		}
