@@ -45,6 +45,15 @@ type Navigator struct {
 	Packages        []*packages.Package
 	CallgraphAlg    string
 	Exclusions      Exclusions
+	// NoAutoDeps disables automatic expansion of the SSA build set to the
+	// full same-module transitive closure of --paths (see
+	// expandToModuleClosure). Only set this if you've deliberately scoped
+	// --paths to include every package a call path might route through;
+	// otherwise a call chain through an unlisted shared/internal package
+	// (a helper library, a wrapper client, etc.) will silently look like a
+	// dead end, since wally only builds real SSA function bodies (and thus
+	// only traces call edges) for packages it was told to build.
+	NoAutoDeps bool
 }
 
 type Exclusions struct {
@@ -110,11 +119,18 @@ func (n *Navigator) Build(paths []string) {
 	n.Packages = pkgs
 
 	if n.RunSSA {
+		ssaBuildPkgs := pkgs
+		if !n.NoAutoDeps {
+			expanded := expandToModuleClosure(pkgs)
+			n.Logger.Info("Expanded SSA build set to same-module transitive closure", "roots", len(pkgs), "total", len(expanded))
+			ssaBuildPkgs = expanded
+		}
+
 		n.Logger.Info("Building SSA program")
 		n.SSA = &SSA{
 			Packages: []*ssa.Package{},
 		}
-		prog, ssaPkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
+		prog, ssaPkgs := ssautil.AllPackages(ssaBuildPkgs, ssa.InstantiateGenerics)
 		n.SSA.Packages = ssaPkgs
 		n.SSA.Program = prog
 		prog.Build()
@@ -203,6 +219,59 @@ func (n *Navigator) FindMatches() {
 			}
 		}
 	}
+}
+
+// expandToModuleClosure walks the import graph of roots (the packages
+// packages.Load returned for the given --paths) and returns roots plus
+// every transitively-imported package that belongs to the same Go module(s)
+// as the roots.
+//
+// This matters because ssautil.AllPackages only builds real SSA function
+// bodies (the ones the callgraph can walk through) for the packages it's
+// explicitly given; packages reachable only via .Imports are otherwise
+// treated as external/bodyless. In practice, a target function is very
+// often reached through a shared internal helper/wrapper package that isn't
+// itself one of the cogs/services the caller thought to list in --paths
+// (e.g. cogA calls target via some/shared/client, and --paths only named
+// cogA) — without this expansion, that whole call chain silently looks like
+// a dead end instead of surfacing an error.
+//
+// Deliberately stops at module boundaries: expanding into every transitive
+// dependency including the standard library and third-party modules would
+// make the SSA build set (and its memory cost) balloon for no benefit, since
+// wally's targets are essentially always first-party code.
+func expandToModuleClosure(roots []*packages.Package) []*packages.Package {
+	rootModules := make(map[string]bool)
+	for _, p := range roots {
+		if p.Module != nil {
+			rootModules[p.Module.Path] = true
+		}
+	}
+
+	seen := make(map[*packages.Package]bool)
+	var result []*packages.Package
+
+	var visit func(p *packages.Package)
+	visit = func(p *packages.Package) {
+		if p == nil || seen[p] {
+			return
+		}
+		seen[p] = true
+
+		inRootModule := p.Module != nil && rootModules[p.Module.Path]
+		if !inRootModule {
+			return
+		}
+		result = append(result, p)
+
+		for _, imp := range p.Imports {
+			visit(imp)
+		}
+	}
+	for _, p := range roots {
+		visit(p)
+	}
+	return result
 }
 
 func LoadPackages(paths []string) []*packages.Package {
@@ -451,6 +520,7 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 			} else {
 				n.RouteMatches[i].SSA.CallPaths = cm.AllPathsBFS(n.SSA.Callgraph.Nodes[routeMatch.SSA.EnclosedByFunc])
 			}
+			n.verifyCallPathImports(routeMatch, n.RouteMatches[i].SSA.CallPaths)
 
 			duration := time.Since(start)
 			n.Logger.Debug("Solved paths for match", "match", routeMatch.Pos.String(), "numPaths", len(n.RouteMatches[i].SSA.CallPaths.Paths), "duration", duration)
@@ -458,6 +528,70 @@ func (n *Navigator) SolveCallPaths(options callmapper.Options) {
 	}
 
 	wg.Wait()
+}
+
+// verifyCallPathImports checks, hop by hop, whether each edge in every
+// found call path is backed by a real, direct package import in the
+// correct direction -- and records how deep from the target that holds
+// (see CallPath.ConfirmedDepth). This exists because cha and vta can both
+// resolve a call through a widely-implemented interface (the motivating
+// case: grpc.ClientConnInterface.Invoke, satisfied by every generated gRPC
+// client) by connecting call sites that share no real import relationship
+// at all -- producing a path that looks real but is a callgraph
+// over-approximation artifact.
+//
+// A per-hop check (rather than one aggregate "is there some transitive
+// path" check on the outermost frame alone) is what makes this precise
+// enough to handle both directions of a case that matters in practice: a
+// genuinely fabricated single-hop dispatch (fails immediately, at hop 0)
+// and a real multi-hop chain that happens to have generic shared
+// framework/bootstrap code prepended ahead of its real entry point by a
+// *different* instance of the same over-approximation (the inner hops
+// confirm; only the outer, decorative ones don't). Trying to anchor on a
+// single frame -- either the true outermost one, or a heuristically-chosen
+// one -- can't distinguish these two shapes correctly at the same time; see
+// the reverted attempt in this repo's history for a concrete case where a
+// single-frame heuristic fixed one shape and broke the other.
+func (n *Navigator) verifyCallPathImports(routeMatch match.RouteMatch, callPaths *match.CallPaths) {
+	if callPaths == nil || routeMatch.SSA.EnclosedByFunc == nil {
+		return
+	}
+	targetPkg := routeMatch.SSA.EnclosedByFunc.Package()
+	if targetPkg == nil || targetPkg.Pkg == nil {
+		return
+	}
+	targetPath := targetPkg.Pkg.Path()
+	idx := wallylib.NewPackageIndex(n.Packages)
+
+	for _, path := range callPaths.Paths {
+		path.VerificationAttempted = true
+		calleePath := targetPath
+		depth := 0
+		for _, node := range path.Nodes {
+			caller := node.Caller
+			if caller == nil || caller.Func == nil {
+				// Can't resolve this hop's caller at all (shouldn't happen
+				// in practice); fail open by treating it as confirmed
+				// rather than truncating a path we can't actually assess.
+				depth++
+				calleePath = ""
+				continue
+			}
+			callerPkg := caller.Func.Package()
+			if callerPkg == nil || callerPkg.Pkg == nil {
+				depth++
+				calleePath = ""
+				continue
+			}
+			callerPath := callerPkg.Pkg.Path()
+			if !idx.DirectlyImports(callerPath, calleePath) {
+				break
+			}
+			depth++
+			calleePath = callerPath
+		}
+		path.ConfirmedDepth = depth
+	}
 }
 
 func (n *Navigator) RecordGlobals(gen *ast.GenDecl, pass *analysis.Pass) {

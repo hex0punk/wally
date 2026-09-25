@@ -37,6 +37,7 @@ var (
 	simplify           bool
 	excludePkgs        []string
 	excluseByPosSuffix []string
+	noAutoDeps         bool
 )
 
 // mapCmd represents the map command
@@ -97,6 +98,7 @@ func init() {
 	mapCmd.PersistentFlags().StringSliceVar(&excluseByPosSuffix, "exclude-pos", []string{}, "Comma separated list of position prefixes used for filtering the selected function call matches")
 
 	mapCmd.PersistentFlags().BoolVar(&serverGraph, "server", false, "Starts a server on port 1984 with output graph")
+	mapCmd.PersistentFlags().BoolVar(&noAutoDeps, "no-auto-deps", false, "Disable automatic expansion of the SSA build set to the same-module transitive closure of --paths. Only set this if --paths already lists every package a call path might route through; otherwise chains through an unlisted shared/internal package will silently look like a dead end.")
 }
 
 func mapRoutes(cmd *cobra.Command, args []string) {
@@ -106,6 +108,7 @@ func mapRoutes(cmd *cobra.Command, args []string) {
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = runSSA
 	nav.CallgraphAlg = callgraphAlg
+	nav.NoAutoDeps = noAutoDeps
 	nav.Exclusions = navigator.Exclusions{
 		Packages:    excludePkgs,
 		PosSuffixes: excluseByPosSuffix,

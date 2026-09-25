@@ -76,6 +76,7 @@ func searchFunc(cmd *cobra.Command, args []string) {
 	nav := navigator.NewNavigator(verbose, indicators)
 	nav.RunSSA = true
 	nav.CallgraphAlg = callgraphAlg
+	nav.NoAutoDeps = noAutoDeps
 
 	mapperOptions := callmapper.Options{
 		Filter:       filter,
