@@ -316,6 +316,7 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
+		(*ast.SelectorExpr)(nil),
 		(*ast.GenDecl)(nil),
 		(*ast.AssignStmt)(nil),
 		(*ast.DeclStmt)(nil),
@@ -323,84 +324,203 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 
 	var results []match.RouteMatch
 
+	// A SelectorExpr that is a CallExpr's own Fun is a real call, already
+	// handled by the CallExpr branch below -- but Preorder still visits it a
+	// second time as a plain child node, since SelectorExpr is now also in
+	// nodeFilter (needed to catch a function/method referenced as a bare
+	// value rather than invoked directly, see matchFuncValueRef). Without
+	// this bookkeeping, every real call site would double-match: once
+	// correctly as a call, once incorrectly as if the callee were only ever
+	// referenced, never called. Preorder visits parent before child, so the
+	// CallExpr branch always runs first and populates this before the
+	// traversal reaches ce.Fun itself.
+	consumedFuns := make(map[ast.Expr]bool)
+
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
 	inspecting.Preorder(nodeFilter, func(node ast.Node) {
 		n.cacheVariables(node, pass)
 
-		ce, ok := node.(*ast.CallExpr)
-		if !ok {
-			return
-		}
+		if ce, ok := node.(*ast.CallExpr); ok {
+			consumedFuns[ce.Fun] = true
 
-		// We have a function if we have made it here
-		funExpr := ce.Fun
-		funcInfo, err := wallylib.GetFuncInfo(funExpr, pass.TypesInfo)
-		if err != nil {
-			return
-		}
-
-		// Get the position of the function in code
-		pos := pass.Fset.Position(funExpr.Pos())
-		if !n.PassesExclusions(pos, funcInfo.Package) {
-			return
-		}
-
-		// This will be used for funcInfo.Match
-		decl := callMapper.EnclosingFunc(ce)
-		if decl != nil {
-			funcInfo.EnclosedBy = &wallylib.FuncDecl{
-				Pkg:  pass.Pkg,
-				Decl: decl,
+			// We have a function if we have made it here
+			funExpr := ce.Fun
+			funcInfo, err := wallylib.GetFuncInfo(funExpr, pass.TypesInfo)
+			if err != nil {
+				return
 			}
-		}
 
-		route := funcInfo.Match(n.RouteIndicators)
-		if route == nil {
-			// Don't keep going deeper in the node if there are no matches by now?
-			return
-		}
+			// Get the position of the function in code
+			pos := pass.Fset.Position(funExpr.Pos())
+			if !n.PassesExclusions(pos, funcInfo.Package) {
+				return
+			}
 
-		// Whether we are able to get params or not we have a match
-		funcMatch := match.NewRouteMatch(*route, pos)
+			// This will be used for funcInfo.Match
+			decl := callMapper.EnclosingFunc(ce)
+			if decl != nil {
+				funcInfo.EnclosedBy = &wallylib.FuncDecl{
+					Pkg:  pass.Pkg,
+					Decl: decl,
+				}
+			}
 
-		if modName := n.GetModuleName(funcInfo.Pkg); modName != "" {
-			funcMatch.Module = modName
-		} else {
-			funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
-		}
+			route := funcInfo.Match(n.RouteIndicators)
+			if route == nil {
+				// Don't keep going deeper in the node if there are no matches by now?
+				return
+			}
 
-		// Now try to get the params for methods, path, etc.
-		funcMatch.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
+			// Whether we are able to get params or not we have a match
+			funcMatch := match.NewRouteMatch(*route, pos)
 
-		//Get the enclosing func
-		if n.RunSSA {
-			ssapkg := n.SSAPkgFromTypesPackage(pass.Pkg)
-			if ssapkg != nil {
-				if ssaEnclosingFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaEnclosingFunc != nil {
-					funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
-					funcMatch.SSA.EnclosedByFunc = ssaEnclosingFunc
-					funcMatch.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce)
+			if modName := n.GetModuleName(funcInfo.Pkg); modName != "" {
+				funcMatch.Module = modName
+			} else {
+				funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
+			}
 
-					if funcMatch.SSA.SSAInstruction != nil {
-						funcMatch.SSA.SSAFunc = wallylib.GetFunctionFromCallInstruction(funcMatch.SSA.SSAInstruction)
-					} else {
-						n.Logger.Debug("unable to get SSA instruction for function", "function", ssaEnclosingFunc.Name())
+			// Now try to get the params for methods, path, etc.
+			funcMatch.Params = wallylib.ResolveParams(route.Params, funcInfo.Signature, ce, pass)
+
+			//Get the enclosing func
+			if n.RunSSA {
+				ssapkg := n.SSAPkgFromTypesPackage(pass.Pkg)
+				if ssapkg != nil {
+					if ssaEnclosingFunc := GetEnclosingFuncWithSSA(pass, ce, ssapkg); ssaEnclosingFunc != nil {
+						funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
+						funcMatch.SSA.EnclosedByFunc = ssaEnclosingFunc
+						funcMatch.SSA.SSAInstruction = n.GetCallInstructionFromSSAFunc(ssaEnclosingFunc, ce)
+
+						if funcMatch.SSA.SSAInstruction != nil {
+							funcMatch.SSA.SSAFunc = wallylib.GetFunctionFromCallInstruction(funcMatch.SSA.SSAInstruction)
+						} else {
+							n.Logger.Debug("unable to get SSA instruction for function", "function", ssaEnclosingFunc.Name())
+						}
 					}
 				}
 			}
-		}
 
-		if funcMatch.EnclosedBy == "" {
-			if decl != nil {
-				funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
+			if funcMatch.EnclosedBy == "" {
+				if decl != nil {
+					funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), decl.Name.String())
+				}
 			}
+
+			results = append(results, funcMatch)
+			return
 		}
 
-		results = append(results, funcMatch)
+		if sel, ok := node.(*ast.SelectorExpr); ok {
+			if consumedFuns[sel] {
+				return
+			}
+			n.matchFuncValueRef(sel, pass, &results)
+			return
+		}
 	})
 
 	return results, nil
+}
+
+// matchFuncValueRef checks whether sel is a reference to a function/method
+// used as a bare value -- not immediately invoked -- and if it matches
+// n.RouteIndicators, records a match the same way Run's CallExpr branch
+// does for a direct call.
+//
+// This exists because indicator matching otherwise only recognizes a
+// literal `foo()` call site (ast.CallExpr): a handler passed as a value
+// into a registration call (`fe.JsonFunc(h.SomeHandler)`, no parens -- the
+// standard shape of nearly every HTTP/gRPC handler registration in Go) is
+// an ast.SelectorExpr, and was previously invisible to indicator matching
+// entirely -- silently reporting "no matches" for a genuinely-reachable
+// handler, indistinguishable from a real dead-code finding.
+//
+// wallylib.GetFuncInfo already resolves a SelectorExpr generically via the
+// type-checker's Info (info.ObjectOf doesn't care whether an identifier
+// appears in call position or not), so no new resolution logic was needed
+// there -- only a new place in the AST walk that reaches this shape at
+// all, plus the bookkeeping in Run to avoid double-matching a real call's
+// own Fun expression as if it were also a bare reference.
+//
+// There is no ssa.CallInstruction for a bare reference (nothing is being
+// called), so SSA/SSAFunc are left unset here, same as when
+// GetCallInstructionFromSSAFunc can't find one for a real call -- path
+// solving only keys on SSA.EnclosedByFunc (see SolveCallPaths), so this
+// does not weaken the resulting call-path search.
+func (n *Navigator) matchFuncValueRef(sel *ast.SelectorExpr, pass *analysis.Pass, results *[]match.RouteMatch) {
+	funcInfo, err := wallylib.GetFuncInfo(sel, pass.TypesInfo)
+	if err != nil {
+		return
+	}
+
+	pos := pass.Fset.Position(sel.Pos())
+	if !n.PassesExclusions(pos, funcInfo.Package) {
+		return
+	}
+
+	if decl := enclosingFuncDecl(pass, sel.Pos()); decl != nil {
+		funcInfo.EnclosedBy = &wallylib.FuncDecl{
+			Pkg:  pass.Pkg,
+			Decl: decl,
+		}
+	}
+
+	route := funcInfo.Match(n.RouteIndicators)
+	if route == nil {
+		return
+	}
+
+	funcMatch := match.NewRouteMatch(*route, pos)
+
+	if modName := n.GetModuleName(funcInfo.Pkg); modName != "" {
+		funcMatch.Module = modName
+	} else if funcInfo.EnclosedBy != nil {
+		funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
+	}
+
+	// No call site, so there are no arguments to resolve params from --
+	// route.Params is only ever non-empty for the built-in HTTP-style
+	// indicators, which target calls, not bare references; this is not
+	// that case for any indicator that could match a value reference.
+	funcMatch.Params = map[string]string{}
+
+	if n.RunSSA {
+		ssapkg := n.SSAPkgFromTypesPackage(pass.Pkg)
+		if ssapkg != nil {
+			if ssaEnclosingFunc := GetEnclosingFuncWithSSAForPos(pass, sel.Pos(), ssapkg); ssaEnclosingFunc != nil {
+				funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), ssaEnclosingFunc.Name())
+				funcMatch.SSA.EnclosedByFunc = ssaEnclosingFunc
+			}
+		}
+	}
+
+	if funcMatch.EnclosedBy == "" && funcInfo.EnclosedBy != nil {
+		funcMatch.EnclosedBy = fmt.Sprintf("%s.%s", pass.Pkg.Name(), funcInfo.EnclosedBy.Decl.Name.String())
+	}
+
+	*results = append(*results, funcMatch)
+}
+
+// enclosingFuncDecl finds the innermost named function declaration
+// containing pos. Unlike cefinder.CeFinder.EnclosingFunc (which matches a
+// specific *ast.CallExpr against a prebuilt map), this works for any
+// position via the same AST-path technique GetEnclosingFuncWithSSA already
+// uses for the SSA side -- needed because a bare value reference has no
+// CallExpr for CeFinder's map to have indexed in the first place.
+func enclosingFuncDecl(pass *analysis.Pass, pos token.Pos) *ast.FuncDecl {
+	file := File(pass, pos)
+	if file == nil {
+		return nil
+	}
+	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
+	for _, node := range path {
+		if fd, ok := node.(*ast.FuncDecl); ok {
+			return fd
+		}
+	}
+	return nil
 }
 
 func (n *Navigator) GetCallInstructionFromSSAFunc(enclosingFunc *ssa.Function, expr *ast.CallExpr) ssa.CallInstruction {
@@ -695,6 +815,16 @@ func GetObjFromCe(ce *ast.CallExpr, info *types.Info) types.Object {
 func GetEnclosingFuncWithSSA(pass *analysis.Pass, ce *ast.CallExpr, ssaPkg *ssa.Package) *ssa.Function {
 	currentFile := File(pass, ce.Fun.Pos())
 	ref, _ := astutil.PathEnclosingInterval(currentFile, ce.Pos(), ce.Pos())
+	return ssa.EnclosingFunction(ssaPkg, ref)
+}
+
+// GetEnclosingFuncWithSSAForPos is GetEnclosingFuncWithSSA generalized to a
+// plain position instead of a *ast.CallExpr, for callers with no call
+// expression at all -- a bare function/method value reference has a
+// position but no call to derive one from.
+func GetEnclosingFuncWithSSAForPos(pass *analysis.Pass, pos token.Pos, ssaPkg *ssa.Package) *ssa.Function {
+	currentFile := File(pass, pos)
+	ref, _ := astutil.PathEnclosingInterval(currentFile, pos, pos)
 	return ssa.EnclosingFunction(ssaPkg, ref)
 }
 
