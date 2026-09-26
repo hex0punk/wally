@@ -12,79 +12,9 @@ import (
 	"strings"
 )
 
-func PrintResults(matches []match.RouteMatch) {
-	for _, match := range matches {
-		// TODO: This is printing the values from the indicator
-		// That's fine, and it works but it should print values
-		// from those captured during navigator, just in case
-		PrintMach(match)
-	}
-	fmt.Println("Total Results: ", len(matches))
-}
-
-func PrintMach(match match.RouteMatch) {
-	fmt.Println("===========MATCH===============")
-	fmt.Println("ID: ", match.MatchId)
-	fmt.Println("Indicator ID: ", match.Indicator.Id)
-	fmt.Println("Package: ", match.Indicator.Package)
-	fmt.Println("Function: ", match.Indicator.Function)
-	fmt.Println("Module: ", match.Module)
-	fmt.Println("Params: ")
-	for k, v := range match.Params {
-		if v == "" {
-			v = "<could not resolve>"
-		}
-		if k == "" {
-			k = "<not specified>"
-		}
-		fmt.Printf("	%s: %s\n", k, v)
-	}
-
-	if match.SSA != nil && match.SSA.EnclosedByFunc != nil {
-		fmt.Println("Enclosed by: ", match.SSA.EnclosedByFunc.String())
-	} else {
-		fmt.Println("Enclosed by: ", match.EnclosedBy)
-	}
-
-	fmt.Printf("Position %s:%d\n", match.Pos.Filename, match.Pos.Line)
-	if match.SSA != nil && match.SSA.CallPaths != nil && len(match.SSA.CallPaths.Paths) > 0 {
-		if match.SSA.PathLimited {
-			fmt.Println("Possible Paths (path limited):", len(match.SSA.CallPaths.Paths))
-		} else {
-			fmt.Println("Possible Paths:", len(match.SSA.CallPaths.Paths))
-		}
-
-		for i, paths := range match.SSA.CallPaths.Paths {
-			fmt.Printf("	Path %d", i+1)
-			if paths.NodeLimited {
-				fmt.Printf(" (node limited)")
-			}
-			if paths.FilterLimited {
-				fmt.Printf(" (filter limited)")
-			}
-			if paths.Recoverable {
-				fmt.Printf(" (RECOVERABLE)")
-			}
-			unconfirmedCount := len(paths.Nodes) - paths.ConfirmedDepth
-			if paths.VerificationAttempted && paths.ConfirmedDepth == 0 && len(paths.Nodes) > 0 {
-				fmt.Printf(" (!! NO IMPORT PATH FOUND for even the call into the target -- likely a cha/vta false positive from a widely-implemented interface, verify against source before trusting this !!)")
-			} else if paths.VerificationAttempted && unconfirmedCount > 0 {
-				fmt.Printf(" (%d outer frame(s) beyond the [unconfirmed] marker below have no direct import to what they supposedly call -- likely generic/shared framework code a cha/vta over-approximation attached, not necessarily fake, but not confirmed either)", unconfirmedCount)
-			}
-			fmt.Printf(":\n")
-
-			for x := len(paths.Nodes) - 1; x >= 0; x-- {
-				marker := ""
-				if paths.VerificationAttempted && x >= paths.ConfirmedDepth {
-					marker = "[unconfirmed] "
-				}
-				fmt.Printf("		%s%s --->\n", marker, paths.Nodes[x].NodeString)
-			}
-			fmt.Printf("			%s\n", match.SSA.TargetPos)
-		}
-	}
-	fmt.Println()
-}
+// PrintResults and PrintMach (the plain-text, human-facing reporter) live in
+// pretty.go now, styled with pterm -- everything below stays a plain data
+// exporter (json/csv/graph), untouched by that.
 
 func GetJson(matches []match.RouteMatch) []byte {
 	jsonOutput, err := json.Marshal(matches)
