@@ -9,46 +9,69 @@ import (
 	"github.com/hex0punk/wally/navigator"
 )
 
-// buildSampleappNavigator builds a real Navigator against sampleapp --
-// SourceIndex is a security boundary, so it's tested against a real
-// SSA-built FileSet rather than a hand-constructed fake, to catch any
-// integration mistake a fake would paper over (wrong field name, wrong
-// FileSet, etc).
+// sharedNav/sharedSampleappDir back buildSampleappNavigator -- see TestMain.
+var (
+	sharedNav          *navigator.Navigator
+	sharedSampleappDir string
+)
+
+// TestMain builds the real sampleapp Navigator exactly ONCE for this
+// package's whole test binary, rather than once per test. Building it per
+// test (each a fresh Navigator.Build, i.e. a fresh go/packages.Load +
+// SSA construction) intermittently produced an incomplete result -- a
+// method reached only via a bound method value (bound.Handler.Handle, see
+// wallylib.IsBoundFunc) occasionally had no SSA body indexed, at roughly a
+// 1-in-8 rate, regardless of which test hit it or whether other tests ran
+// alongside it -- reproducing only on a second-or-later real Build() call
+// within one process, never as a first/only call, and never as a
+// standalone repro outside `go test`. That smells like a rare
+// upstream/environmental nondeterminism in repeated Build() invocations
+// (arguably worth its own investigation some day -- wally shell's own
+// `reload` also calls Build() again within one process -- but out of
+// scope for what this test suite needs to prove). Building once, like a
+// real wally process's own single-build-many-queries lifecycle, sidesteps
+// it entirely rather than papering over a result that can't be trusted.
 //
 // sampleapp has its own go.mod (a separate module from wally's own), so
 // go/packages can't resolve a cross-module relative pattern like
 // "../sampleapp/..." from this package's directory -- every real
 // invocation of wally against it this session cd'd into sampleapp/ first
 // (e.g. "cd sampleapp && ../wally shell -p ./..."), and this test does the
-// same, restoring the original directory when done. It returns the
-// absolute sampleapp directory too, since callers need it to build
-// absolute/relative test paths that remain valid after the directory is
-// restored.
-func buildSampleappNavigator(t *testing.T) (nav *navigator.Navigator, sampleappDir string) {
-	t.Helper()
-
+// same for the whole run, restoring the original directory once all tests
+// finish.
+func TestMain(m *testing.M) {
 	orig, err := os.Getwd()
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
-	sampleappDir, err = filepath.Abs("../sampleapp")
+	sharedSampleappDir, err = filepath.Abs("../sampleapp")
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
-	if err := os.Chdir(sampleappDir); err != nil {
-		t.Fatal(err)
+	if err := os.Chdir(sharedSampleappDir); err != nil {
+		panic(err)
 	}
-	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
-			t.Fatal(err)
-		}
-	})
 
-	nav = navigator.NewNavigator(0, nil)
-	nav.RunSSA = true
-	nav.CallgraphAlg = "cha"
-	nav.Build([]string{"./..."})
-	return nav, sampleappDir
+	sharedNav = navigator.NewNavigator(0, nil)
+	sharedNav.RunSSA = true
+	sharedNav.CallgraphAlg = "cha"
+	sharedNav.Build([]string{"./..."})
+
+	code := m.Run()
+
+	if err := os.Chdir(orig); err != nil {
+		panic(err)
+	}
+	os.Exit(code)
+}
+
+// buildSampleappNavigator returns the shared sampleapp Navigator built
+// once in TestMain, plus its absolute directory (cwd for the whole test
+// run -- see TestMain). Kept as a function, not a bare variable access, so
+// every existing call site reads the same either way.
+func buildSampleappNavigator(t *testing.T) (nav *navigator.Navigator, sampleappDir string) {
+	t.Helper()
+	return sharedNav, sharedSampleappDir
 }
 
 func TestSourceIndex_ResolvesAnalyzedFile(t *testing.T) {

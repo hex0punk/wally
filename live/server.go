@@ -37,14 +37,20 @@ type Info struct {
 // is enough for now; see the "wally live" design notes for why per-request
 // Navigator copies are deferred rather than attempted here.
 type Server struct {
-	mu          sync.Mutex
-	nav         *navigator.Navigator
-	info        Info
-	sourceIndex *SourceIndex
+	mu            sync.Mutex
+	nav           *navigator.Navigator
+	info          Info
+	sourceIndex   *SourceIndex
+	functionIndex *FunctionIndex
 }
 
 func NewServer(nav *navigator.Navigator, info Info) *Server {
-	return &Server{nav: nav, info: info, sourceIndex: NewSourceIndex(nav)}
+	return &Server{
+		nav:           nav,
+		info:          info,
+		sourceIndex:   NewSourceIndex(nav),
+		functionIndex: NewFunctionIndex(nav),
+	}
 }
 
 func (s *Server) Handler() (http.Handler, error) {
@@ -58,6 +64,8 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/info", s.handleInfo)
 	mux.HandleFunc("/api/query", s.handleQuery)
 	mux.HandleFunc("/api/source", s.handleSource)
+	mux.HandleFunc("/api/files", s.handleFiles)
+	mux.HandleFunc("/api/enclosing", s.handleEnclosing)
 	return mux, nil
 }
 
@@ -182,6 +190,53 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		Path:    file,
 		Content: string(content),
 		Line:    line,
+	})
+}
+
+type filesResponse struct {
+	Files []string `json:"files"`
+}
+
+// handleFiles lists first-party files only (see SourceIndex.ListFiles) for
+// the Files tab's browse/filter list. This is narrower than what
+// /api/source will actually serve -- every file here is guaranteed
+// loadable, but a graph node can still resolve to a broader file /api/source
+// accepts that isn't listed here (e.g. third-party code reached via a
+// match-filter query).
+func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "GET only")
+		return
+	}
+	writeJSON(w, http.StatusOK, filesResponse{Files: s.sourceIndex.ListFiles()})
+}
+
+type enclosingResponse struct {
+	Ok       bool   `json:"ok"`
+	Pkg      string `json:"pkg"`
+	Function string `json:"function"`
+	RecvType string `json:"recvType"`
+}
+
+// handleEnclosing resolves a file:line -- a right-click in the code
+// viewer -- to its enclosing function, in the same shape a query form
+// uses. Ok=false is a normal outcome (nothing queryable at that line, e.g.
+// an import or a package-level var), not an error, so this is always 200.
+func (s *Server) handleEnclosing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "GET only")
+		return
+	}
+
+	file := r.URL.Query().Get("file")
+	line, _ := strconv.Atoi(r.URL.Query().Get("line"))
+
+	pkg, function, recvType, ok := s.functionIndex.Resolve(file, line)
+	writeJSON(w, http.StatusOK, enclosingResponse{
+		Ok:       ok,
+		Pkg:      pkg,
+		Function: function,
+		RecvType: recvType,
 	})
 }
 
