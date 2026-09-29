@@ -87,11 +87,20 @@
   var codeHeaderEl = document.getElementById("code-header");
   var codePreEl = document.getElementById("code-pre");
   var codeContentEl = document.getElementById("code-content");
+  var tabButtons = document.querySelectorAll(".tab-btn");
+  var tabPanes = document.querySelectorAll(".tab-pane");
+  var fileFilterEl = document.getElementById("file-filter");
+  var fileListEl = document.getElementById("file-list");
+  var contextMenuEl = document.getElementById("context-menu");
+  var contextMenuShowGraphEl = document.getElementById("context-menu-show-graph");
 
   var seq = 0;
   var currentAbort = null;
   var sourceSeq = 0;
   var sourceCache = {}; // file -> content, avoids re-fetching on repeat clicks
+  var currentFile = null; // file currently shown in the code pane, for the context menu's /api/enclosing call
+  var allFiles = null; // populated once from /api/files, filtered client-side
+  var pendingContextLine = null; // line the context menu is currently open for
 
   function setStatus(text, kind) {
     statusEl.textContent = text;
@@ -207,11 +216,22 @@
     });
   }
 
+  function clearHighlight() {
+    var existing = codePreEl.querySelector(".wally-line-highlight");
+    if (existing) existing.remove();
+  }
+
   function showCodeMessage(text) {
     codeHeaderEl.textContent = text;
     codeContentEl.textContent = "";
-    var existing = codePreEl.querySelector(".wally-line-highlight");
-    if (existing) existing.remove();
+    clearHighlight();
+  }
+
+  // formatHeader omits ":0" for a file loaded with no specific line (e.g.
+  // from the Files tab) -- "0" isn't a real line number, just this pane's
+  // "no highlight" sentinel (see loadSource's file-list caller).
+  function formatHeader(file, line) {
+    return line ? (file + ":" + line) : file;
   }
 
   function loadSource(nodeData) {
@@ -221,7 +241,8 @@
     }
 
     var mySeq = ++sourceSeq;
-    codeHeaderEl.textContent = nodeData.file + ":" + nodeData.line + " (loading…)";
+    currentFile = nodeData.file;
+    codeHeaderEl.textContent = formatHeader(nodeData.file, nodeData.line) + " (loading…)";
 
     var cached = sourceCache[nodeData.file];
     if (cached !== undefined) {
@@ -249,7 +270,7 @@
   }
 
   function renderSource(nodeData, content) {
-    codeHeaderEl.textContent = nodeData.file + ":" + nodeData.line;
+    codeHeaderEl.textContent = formatHeader(nodeData.file, nodeData.line);
     codeContentEl.textContent = content;
 
     // Prism.highlightElement is synchronous for a plain (non-worker)
@@ -259,7 +280,11 @@
       try { Prism.highlightElement(codeContentEl); } catch (e) { /* fall through to plain text */ }
     }
 
-    highlightLine(nodeData.line);
+    if (nodeData.line) {
+      highlightLine(nodeData.line);
+    } else {
+      clearHighlight();
+    }
   }
 
   // highlightLine draws its own highlight bar rather than relying on
@@ -273,8 +298,7 @@
   // -- so the bar is exactly where the line actually is, however tall a
   // line turns out to render.
   function highlightLine(line) {
-    var existing = codePreEl.querySelector(".wally-line-highlight");
-    if (existing) existing.remove();
+    clearHighlight();
 
     var lineSpans = codePreEl.querySelectorAll(".line-numbers-rows > span");
     var target = lineSpans[line - 1];
@@ -304,9 +328,11 @@
     }
   });
 
-  form.addEventListener("submit", function (evt) {
-    evt.preventDefault();
-
+  // runQuery is the shared query-submission path -- called from the form's
+  // own submit event, and also from the context menu's "Show graph for
+  // this function" action (which fills the form fields and calls this
+  // directly, rather than synthesizing a fake submit event).
+  function runQuery(body) {
     var mySeq = ++seq;
     if (currentAbort) currentAbort.abort();
     currentAbort = new AbortController();
@@ -315,7 +341,6 @@
     pathsEl.innerHTML = "";
     detailsEl.textContent = "";
 
-    var body = buildRequestBody();
     var t0 = performance.now();
 
     fetch("/api/query", {
@@ -360,7 +385,132 @@
         if (err.name === "AbortError") return;
         setStatus("request failed: " + err.message, "error");
       });
+  }
+
+  form.addEventListener("submit", function (evt) {
+    evt.preventDefault();
+    runQuery(buildRequestBody());
   });
+
+  // ---- Left-rail tabs ----------------------------------------------------
+  // Both panes stay in the DOM across switches so the query form/results
+  // aren't lost when the user flips to Files and back.
+  function activateTab(name) {
+    tabButtons.forEach(function (btn) {
+      btn.classList.toggle("active", btn.dataset.tab === name);
+    });
+    tabPanes.forEach(function (pane) {
+      pane.classList.toggle("active", pane.id === "tab-" + name);
+    });
+    if (name === "files") loadFiles();
+  }
+
+  tabButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () { activateTab(btn.dataset.tab); });
+  });
+
+  // ---- Files tab -----------------------------------------------------------
+  function loadFiles() {
+    if (allFiles !== null) return; // fetched once; the analyzed set is fixed for this process's lifetime
+    fileListEl.innerHTML = "<li class=\"muted\">loading…</li>";
+    fetch("/api/files")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        allFiles = data.files || [];
+        renderFileList(allFiles);
+      })
+      .catch(function () {
+        fileListEl.innerHTML = "<li class=\"muted error\">could not load file list</li>";
+      });
+  }
+
+  function renderFileList(files) {
+    fileListEl.innerHTML = "";
+    if (files.length === 0) {
+      fileListEl.innerHTML = "<li class=\"muted\">no files match</li>";
+      return;
+    }
+    files.forEach(function (path) {
+      var li = document.createElement("li");
+      li.textContent = path;
+      li.addEventListener("click", function () {
+        loadSource({ file: path, line: 0 });
+      });
+      fileListEl.appendChild(li);
+    });
+  }
+
+  fileFilterEl.addEventListener("input", function () {
+    if (allFiles === null) return;
+    var needle = fileFilterEl.value.trim().toLowerCase();
+    var filtered = needle
+      ? allFiles.filter(function (f) { return f.toLowerCase().indexOf(needle) !== -1; })
+      : allFiles;
+    renderFileList(filtered);
+  });
+
+  // ---- Right-click context menu: jump from source to its call graph ------
+  function hideContextMenu() {
+    contextMenuEl.classList.add("hidden");
+    pendingContextLine = null;
+  }
+
+  // Finds which rendered source line a click landed on by checking the
+  // line-numbers plugin's own per-line gutter spans -- the same DOM
+  // highlightLine already uses for positioning -- rather than trying to
+  // derive a line number from raw pixel math against font metrics.
+  function lineAtClientY(clientY) {
+    var lineSpans = codePreEl.querySelectorAll(".line-numbers-rows > span");
+    for (var i = 0; i < lineSpans.length; i++) {
+      var rect = lineSpans[i].getBoundingClientRect();
+      if (clientY >= rect.top && clientY < rect.bottom) return i + 1;
+    }
+    return null;
+  }
+
+  codePreEl.addEventListener("contextmenu", function (evt) {
+    var line = lineAtClientY(evt.clientY);
+    if (!line || !currentFile) return; // no source loaded, or click landed outside any line -- let the native menu show
+    evt.preventDefault();
+
+    pendingContextLine = line;
+    contextMenuEl.classList.remove("hidden");
+    contextMenuEl.style.left = evt.clientX + "px";
+    contextMenuEl.style.top = evt.clientY + "px";
+  });
+
+  contextMenuShowGraphEl.addEventListener("click", function () {
+    var file = currentFile, line = pendingContextLine;
+    hideContextMenu();
+    if (!file || !line) return;
+
+    fetch("/api/enclosing?file=" + encodeURIComponent(file) + "&line=" + encodeURIComponent(line))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.ok) {
+          setStatus("No function found at " + file + ":" + line + ".", "error");
+          return;
+        }
+        document.getElementById("q-pkg").value = data.pkg;
+        document.getElementById("q-func").value = data.function;
+        document.getElementById("q-recv-type").value = data.recvType || "";
+        activateTab("query");
+        runQuery(buildRequestBody());
+      })
+      .catch(function (err) {
+        setStatus("Could not resolve enclosing function: " + err.message, "error");
+      });
+  });
+
+  document.addEventListener("click", function (evt) {
+    if (!contextMenuEl.classList.contains("hidden") && !contextMenuEl.contains(evt.target)) {
+      hideContextMenu();
+    }
+  });
+  document.addEventListener("keydown", function (evt) {
+    if (evt.key === "Escape") hideContextMenu();
+  });
+  document.getElementById("code-scroll").addEventListener("scroll", hideContextMenu);
 
   loadInfo();
 })();
