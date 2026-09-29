@@ -62,12 +62,22 @@ func GetFormattedPos(pkg *ssa.Package, pos token.Pos) string {
 // GetFormattedPosFromFunc formats a position using function.Prog.Fset rather
 // than function.Package().Prog.Fset, so it works for synthetic functions
 // (e.g. bound method wrappers, see IsBoundFunc) whose Package() is nil. It
-// prefers the function's own position when it has one, falling back to pos
-// (typically the call site) otherwise.
+// prefers pos (typically the real call site) when valid, falling back to
+// the function's own declaration position only when pos itself is NoPos.
+//
+// This must check pos, not function.Pos(): a regular named function's
+// Pos() is valid almost universally, so checking it instead would override
+// a genuine, more specific call-site position with the function's
+// declaration line on nearly every call -- exactly backwards from
+// wallynode.CreateWallyNode's site-vs-no-site distinction, which exists so
+// a mid-chain frame shows where it's actually called from, not just which
+// function it's in. The enclosing-function/no-site case (initPath, and
+// CreateWallyNode's own site==nil branch) already gets the declaration
+// line correctly, by passing function.Pos() in as pos itself.
 func GetFormattedPosFromFunc(function *ssa.Function, pos token.Pos) string {
 	fs := function.Prog.Fset
 	target := pos
-	if function.Pos() != token.NoPos {
+	if target == token.NoPos {
 		target = function.Pos()
 	}
 	p := fs.Position(target)
