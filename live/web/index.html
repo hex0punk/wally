@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>wally live</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css" />
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script>window.Prism = { manual: true };</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <h1>wally live</h1>
+    <div id="info" class="muted">connecting…</div>
+
+    <form id="query-form">
+      <label>Package<input type="text" id="q-pkg" name="pkg" placeholder="e.g. fs/services/grant" required /></label>
+      <label>Function<input type="text" id="q-func" name="func" placeholder="e.g. CheckAccess" required /></label>
+      <label>Receiver type<input type="text" id="q-recv-type" name="recv-type" placeholder="optional" /></label>
+
+      <details>
+        <summary>Advanced</summary>
+        <label>Match filter(s), comma separated<input type="text" id="q-match-filter" name="match-filter" /></label>
+        <label>Path filter (-f)<input type="text" id="q-filter" name="filter" /></label>
+        <label>Search algorithm
+          <select id="q-search-alg" name="search-alg">
+            <option value="bfs" selected>bfs</option>
+            <option value="dfs">dfs</option>
+          </select>
+        </label>
+        <label>Limiter mode (0-4)<input type="number" id="q-limiter-mode" name="limiter-mode" min="0" max="4" value="4" /></label>
+        <label>Max paths<input type="number" id="q-max-paths" name="max-paths" min="0" value="0" /></label>
+        <label>Max funcs<input type="number" id="q-max-funcs" name="max-funcs" min="0" value="0" /></label>
+        <label><input type="checkbox" id="q-module-only" name="module-only" checked /> Module only</label>
+        <label><input type="checkbox" id="q-skip-closures" name="skip-closures" /> Skip closures</label>
+        <label><input type="checkbox" id="q-simple" name="simple" /> Simple (signatures, not sites)</label>
+      </details>
+
+      <button type="submit">Query</button>
+    </form>
+
+    <div id="status" class="muted">Enter a package and function, then Query.</div>
+
+    <div id="legend">
+      <span class="chip target">target</span>
+      <span class="chip unconfirmed">unconfirmed</span>
+      <span class="chip no-import">no import path</span>
+      <span class="chip recoverable">recoverable</span>
+      <span class="chip truncated">truncated</span>
+    </div>
+
+    <div id="paths"></div>
+    <div id="details"></div>
+  </div>
+  <div id="code">
+    <div id="code-header" class="muted">Click a node to view its source.</div>
+    <div id="code-scroll">
+      <pre id="code-pre" class="line-numbers"><code id="code-content" class="language-go"></code></pre>
+    </div>
+  </div>
+  <div id="right">
+    <div id="cy"></div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

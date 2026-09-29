@@ -334,6 +334,45 @@ Two extra shell-only commands:
 - `reload`: rebuilds the callgraph from disk using the same session-level flags you started with — use this after editing source, not to add new paths (for that, start a new `wally shell` with a wider `--paths`).
 - `exit` / `quit`: leave the shell.
 
+## Live graph UI (`wally live`)
+
+Same resident-callgraph model as `wally shell` — build the SSA/callgraph
+once, then answer queries in milliseconds — but instead of a stdin prompt,
+`wally live` serves an HTTP API and a small embedded web UI that renders
+each query's call paths as a [Cytoscape.js](https://js.cytoscape.org/) graph
+instead of the CLI's text tree:
+
+```bash
+$ wally live --paths ./...
+Callgraph built in 722ms
+wally live UI: http://127.0.0.1:1985
+```
+
+Open that URL, type a package and function (optionally a receiver type,
+same interface-satisfaction resolution `--recv-type` gets elsewhere), and
+the matching call paths render live — no more building a new callgraph per
+query, and no more reading arrow chains by hand for anything with more than
+a couple of hops. Unconfirmed frames, `RECOVERABLE` paths, and `NO IMPORT
+PATH FOUND` warnings use the same palette as the CLI's colored output
+(yellow/green/red respectively), so the two views read consistently.
+
+Session-level flags are the same as `wally shell`'s (`--paths`/`-p`,
+`--callgraph-alg`, `--exclude-pkg`, `--exclude-pos`, `--no-auto-deps`), plus:
+
+- `--host` (default `127.0.0.1`): binds to localhost only by default — this
+  serves source file paths and code positions, so don't bind it to a public
+  interface.
+- `--port` / `-P` (default `1985`): distinct from `wally server`'s default
+  `1984`, so both can run side by side.
+
+`wally live` doesn't take `--config`/`--skip-default` — every query already
+replaces the active indicator set wholesale, so a preloaded config file
+wouldn't survive the first query anyway.
+
+This is a phase-1 tool: the function is typed in, not picked by clicking a
+call site in an editor. That's a natural next step, not something this
+serves today.
+
 ## Using Wally in Fuzzing Efforts to Determine Fault Tolerance of Call Paths
 
 Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found [here](https://hex0punk.com/posts/fault-tolerance-detection-with-wally/).
