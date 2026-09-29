@@ -91,8 +91,15 @@
   var tabPanes = document.querySelectorAll(".tab-pane");
   var fileFilterEl = document.getElementById("file-filter");
   var fileListEl = document.getElementById("file-list");
+  var functionSearchEl = document.getElementById("function-search");
+  var functionListEl = document.getElementById("function-list");
   var contextMenuEl = document.getElementById("context-menu");
   var contextMenuShowGraphEl = document.getElementById("context-menu-show-graph");
+  var contextMenuSetSourceEl = document.getElementById("context-menu-set-source");
+  var contextMenuFindPathEl = document.getElementById("context-menu-find-path");
+  var pathSourceEl = document.getElementById("path-source");
+  var pathSourceLabelEl = document.getElementById("path-source-label");
+  var pathSourceClearEl = document.getElementById("path-source-clear");
 
   var seq = 0;
   var currentAbort = null;
@@ -101,6 +108,9 @@
   var currentFile = null; // file currently shown in the code pane, for the context menu's /api/enclosing call
   var allFiles = null; // populated once from /api/files, filtered client-side
   var pendingContextLine = null; // line the context menu is currently open for
+  var functionSearchSeq = 0;
+  var functionSearchTimer = null;
+  var pathSourceFn = null; // {pkg, function, recvType, label} set via the context menu's "Set as path source"
 
   function setStatus(text, kind) {
     statusEl.textContent = text;
@@ -145,6 +155,19 @@
       "skip-closures": document.getElementById("q-skip-closures").checked,
       "simple": document.getElementById("q-simple").checked
     };
+  }
+
+  // buildRequestBodyFor is buildRequestBody, but with pkg/func/recv-type
+  // overridden -- used by the "Find path from source here" flow, which
+  // resolves its own sink from a right-clicked line rather than from
+  // whatever's currently typed into the form, while still respecting the
+  // form's Advanced options (search alg, limits, etc).
+  function buildRequestBodyFor(pkg, func, recvType) {
+    var body = buildRequestBody();
+    body["pkg"] = pkg;
+    body["func"] = func;
+    body["recv-type"] = recvType || "";
+    return body;
   }
 
   function renderGraph(elements) {
@@ -221,10 +244,15 @@
     if (existing) existing.remove();
   }
 
+  function clearResolvedArgBoxes() {
+    codePreEl.querySelectorAll(".wally-arg-box").forEach(function (el) { el.remove(); });
+  }
+
   function showCodeMessage(text) {
     codeHeaderEl.textContent = text;
     codeContentEl.textContent = "";
     clearHighlight();
+    clearResolvedArgBoxes();
   }
 
   // formatHeader omits ":0" for a file loaded with no specific line (e.g.
@@ -285,6 +313,81 @@
     } else {
       clearHighlight();
     }
+
+    // resolvedArgs is only ever populated on a "target" node (see
+    // NodeData's own doc comment) -- an intermediate call-path frame has
+    // no retained AST/argument info to show here.
+    if (nodeData.kind === "target" && nodeData.resolvedArgs && nodeData.resolvedArgs.length) {
+      renderResolvedArgs(nodeData.resolvedArgs);
+    } else {
+      clearResolvedArgBoxes();
+    }
+  }
+
+  // rangeForSpan maps a (line, col)-to-(endLine, endCol) span -- 1-based,
+  // byte-offset-within-line, exactly as go/token.Position reports it -- to
+  // a DOM Range inside the highlighted #code-content. Prism's highlighting
+  // only wraps runs of the original text in <span> tags, never adding or
+  // removing characters, so walking every text node in DOM order and
+  // concatenating them reconstructs the exact original file content in the
+  // same order -- meaning accumulating line/col across that walk lines up
+  // with the file's own positions exactly as if Prism had never touched it.
+  function rangeForSpan(startLine, startCol, endLine, endCol) {
+    var walker = document.createTreeWalker(codeContentEl, NodeFilter.SHOW_TEXT, null);
+    var line = 1, col = 1;
+    var startNode = null, startOffset = 0;
+    var endNode = null, endOffset = 0;
+    var node;
+    while ((node = walker.nextNode())) {
+      var text = node.nodeValue;
+      for (var i = 0; i < text.length; i++) {
+        if (startNode === null && line === startLine && col === startCol) {
+          startNode = node;
+          startOffset = i;
+        }
+        if (endNode === null && line === endLine && col === endCol) {
+          endNode = node;
+          endOffset = i;
+        }
+        if (text.charAt(i) === "\n") {
+          line++;
+          col = 1;
+        } else {
+          col++;
+        }
+      }
+    }
+    if (!startNode || !endNode) return null;
+    var range = document.createRange();
+    range.setStart(startNode, startOffset);
+    range.setEnd(endNode, endOffset);
+    return range;
+  }
+
+  // renderResolvedArgs draws a small hoverable box (native title tooltip)
+  // around each resolved argument's own token span, positioned the same
+  // way highlightLine positions its bar -- via getBoundingClientRect()
+  // deltas against #code-pre -- but per-token instead of per-line, so it
+  // needs a real Range rather than a whole line's gutter row.
+  function renderResolvedArgs(args) {
+    clearResolvedArgBoxes();
+    var preRect = codePreEl.getBoundingClientRect();
+    args.forEach(function (a) {
+      var range = rangeForSpan(a.line, a.col, a.endLine, a.endCol);
+      if (!range) return; // couldn't map this span -- skip it rather than mis-place a box
+      var rects = range.getClientRects();
+      for (var i = 0; i < rects.length; i++) {
+        var r = rects[i];
+        var box = document.createElement("div");
+        box.className = "wally-arg-box";
+        box.style.left = (r.left - preRect.left) + "px";
+        box.style.top = (r.top - preRect.top) + "px";
+        box.style.width = r.width + "px";
+        box.style.height = r.height + "px";
+        box.title = (a.name ? a.name + " = " : "") + a.value;
+        codePreEl.appendChild(box);
+      }
+    });
   }
 
   // highlightLine draws its own highlight bar rather than relying on
@@ -328,10 +431,36 @@
     }
   });
 
+  // applyQueryResponse renders a successful /api/query or /api/query-through
+  // response -- shared so both endpoints paint the graph/paths/status
+  // identically. noMatchMessage is what to show when matchCount is 0,
+  // since "no matches for func X" (a plain query) and "no path from source
+  // to sink" (a filtered query) need different wording for the same
+  // underlying empty-result shape.
+  function applyQueryResponse(data, rtt, noMatchMessage) {
+    if (data.matchCount === 0) {
+      setStatus(
+        noMatchMessage + " (resolved in " + data.elapsedMs.toFixed(2) + "ms, round trip " + rtt + "ms)",
+        "muted"
+      );
+      renderGraph({ nodes: [], edges: [] });
+      return;
+    }
+
+    setStatus(
+      data.matchCount + " match(es), " + data.paths.length + " path(s) " +
+      "(resolved in " + data.elapsedMs.toFixed(2) +
+      "ms against the already-built callgraph, round trip " + rtt + "ms)"
+    );
+    renderGraph(data.elements);
+    renderPaths(data.paths);
+  }
+
   // runQuery is the shared query-submission path -- called from the form's
   // own submit event, and also from the context menu's "Show graph for
-  // this function" action (which fills the form fields and calls this
-  // directly, rather than synthesizing a fake submit event).
+  // this function" action and the Functions tab (which fill the form
+  // fields and call this directly, rather than synthesizing a fake submit
+  // event).
   function runQuery(body) {
     var mySeq = ++seq;
     if (currentAbort) currentAbort.abort();
@@ -361,25 +490,61 @@
         }
 
         var rtt = Math.round(performance.now() - t0);
-        var data = res.data;
+        applyQueryResponse(res.data, rtt, "No matches found for func " + body["func"] + " in package " + body["pkg"]);
+      })
+      .catch(function (err) {
+        if (err.name === "AbortError") return;
+        setStatus("request failed: " + err.message, "error");
+      });
+  }
 
-        if (data.matchCount === 0) {
-          setStatus(
-            "No matches found for func " + body["func"] + " in package " + body["pkg"] +
-            " (resolved in " + data.elapsedMs.toFixed(2) + "ms, round trip " + rtt + "ms)",
-            "muted"
-          );
-          renderGraph({ nodes: [], edges: [] });
+  // queryFunction fills the query form for (pkg, function, recvType) and
+  // runs it -- the shared "go query this specific function" action behind
+  // both the context menu's "Show graph for this function" and a Functions
+  // tab search result click.
+  function queryFunction(pkg, func, recvType) {
+    document.getElementById("q-pkg").value = pkg;
+    document.getElementById("q-func").value = func;
+    document.getElementById("q-recv-type").value = recvType || "";
+    activateTab("query");
+    runQuery(buildRequestBody());
+  }
+
+  // queryThrough answers "does any path to this sink pass through that
+  // source" via /api/query-through -- the context menu's "Find path from
+  // source here" action.
+  function queryThrough(sinkBody, source) {
+    var mySeq = ++seq;
+    if (currentAbort) currentAbort.abort();
+    currentAbort = new AbortController();
+
+    setStatus("querying…");
+    pathsEl.innerHTML = "";
+    detailsEl.textContent = "";
+
+    var t0 = performance.now();
+
+    fetch("/api/query-through", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sink: sinkBody, source: source }),
+      signal: currentAbort.signal
+    })
+      .then(function (r) {
+        return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+      })
+      .then(function (res) {
+        if (mySeq !== seq) return;
+
+        if (!res.ok) {
+          setStatus("error: " + res.data.error, "error");
           return;
         }
 
-        setStatus(
-          data.matchCount + " match(es), " + data.paths.length + " path(s) " +
-          "(resolved in " + data.elapsedMs.toFixed(2) +
-          "ms against the already-built callgraph, round trip " + rtt + "ms)"
-        );
-        renderGraph(data.elements);
-        renderPaths(data.paths);
+        var rtt = Math.round(performance.now() - t0);
+        var sourceLabel = source.recvType ? source.recvType + "." + source.function : source.function;
+        var sinkLabel = sinkBody["recv-type"] ? sinkBody["recv-type"] + "." + sinkBody["func"] : sinkBody["func"];
+        applyQueryResponse(res.data, rtt, "No path from " + sourceLabel + " to " + sinkLabel + " found");
       })
       .catch(function (err) {
         if (err.name === "AbortError") return;
@@ -449,6 +614,63 @@
     renderFileList(filtered);
   });
 
+  // ---- Functions tab -------------------------------------------------------
+  // Unlike Files (fetched once, filtered client-side), a large codebase can
+  // have tens of thousands of functions, so this searches server-side per
+  // keystroke instead -- debounced, and only once 2+ chars are typed.
+  function functionResultLabel(r) {
+    return r.recvType ? r.recvType + "." + r.function : r.function;
+  }
+
+  function renderFunctionList(results) {
+    functionListEl.innerHTML = "";
+    if (results.length === 0) {
+      functionListEl.innerHTML = "<li class=\"muted\">no functions match</li>";
+      return;
+    }
+    results.forEach(function (r) {
+      var li = document.createElement("li");
+      var name = document.createElement("div");
+      name.textContent = functionResultLabel(r);
+      var loc = document.createElement("div");
+      loc.className = "muted";
+      loc.textContent = r.file + ":" + r.line;
+      li.appendChild(name);
+      li.appendChild(loc);
+      li.addEventListener("click", function () {
+        queryFunction(r.pkg, r.function, r.recvType);
+        loadSource({ file: r.file, line: r.line });
+      });
+      functionListEl.appendChild(li);
+    });
+  }
+
+  functionSearchEl.addEventListener("input", function () {
+    var q = functionSearchEl.value.trim();
+    if (functionSearchTimer) clearTimeout(functionSearchTimer);
+
+    if (q.length < 2) {
+      functionListEl.innerHTML = q.length === 0
+        ? ""
+        : "<li class=\"muted\">keep typing… (2+ chars)</li>";
+      return;
+    }
+
+    functionSearchTimer = setTimeout(function () {
+      var mySeq = ++functionSearchSeq;
+      fetch("/api/functions?q=" + encodeURIComponent(q) + "&limit=50")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (mySeq !== functionSearchSeq) return; // a newer keystroke already landed
+          renderFunctionList(data.results || []);
+        })
+        .catch(function () {
+          if (mySeq !== functionSearchSeq) return;
+          functionListEl.innerHTML = "<li class=\"muted error\">search failed</li>";
+        });
+    }, 200);
+  });
+
   // ---- Right-click context menu: jump from source to its call graph ------
   function hideContextMenu() {
     contextMenuEl.classList.add("hidden");
@@ -474,12 +696,17 @@
     evt.preventDefault();
 
     pendingContextLine = line;
+    contextMenuFindPathEl.classList.toggle("hidden", !pathSourceFn);
     contextMenuEl.classList.remove("hidden");
     contextMenuEl.style.left = evt.clientX + "px";
     contextMenuEl.style.top = evt.clientY + "px";
   });
 
-  contextMenuShowGraphEl.addEventListener("click", function () {
+  // resolveContextMenuTarget resolves the line the context menu is
+  // currently open for to its enclosing function -- shared by all three
+  // context-menu actions, which all start from the same "what function is
+  // this line in" question.
+  function resolveContextMenuTarget(onResolved) {
     var file = currentFile, line = pendingContextLine;
     hideContextMenu();
     if (!file || !line) return;
@@ -491,15 +718,40 @@
           setStatus("No function found at " + file + ":" + line + ".", "error");
           return;
         }
-        document.getElementById("q-pkg").value = data.pkg;
-        document.getElementById("q-func").value = data.function;
-        document.getElementById("q-recv-type").value = data.recvType || "";
-        activateTab("query");
-        runQuery(buildRequestBody());
+        onResolved(data);
       })
       .catch(function (err) {
         setStatus("Could not resolve enclosing function: " + err.message, "error");
       });
+  }
+
+  contextMenuShowGraphEl.addEventListener("click", function () {
+    resolveContextMenuTarget(function (data) {
+      queryFunction(data.pkg, data.function, data.recvType);
+    });
+  });
+
+  contextMenuSetSourceEl.addEventListener("click", function () {
+    resolveContextMenuTarget(function (data) {
+      pathSourceFn = { pkg: data.pkg, function: data.function, recvType: data.recvType };
+      pathSourceLabelEl.textContent = functionResultLabel(pathSourceFn);
+      pathSourceEl.classList.remove("hidden");
+      setStatus("Path source set: " + functionResultLabel(pathSourceFn) + ". Right-click a potential sink to find a path.");
+    });
+  });
+
+  contextMenuFindPathEl.addEventListener("click", function () {
+    if (!pathSourceFn) return; // menu shouldn't show this button without a source, but guard anyway
+    var source = pathSourceFn;
+    resolveContextMenuTarget(function (data) {
+      var sinkBody = buildRequestBodyFor(data.pkg, data.function, data.recvType);
+      queryThrough(sinkBody, source);
+    });
+  });
+
+  pathSourceClearEl.addEventListener("click", function () {
+    pathSourceFn = null;
+    pathSourceEl.classList.add("hidden");
   });
 
   document.addEventListener("click", function (evt) {

@@ -20,10 +20,15 @@
   <div id="left">
     <h1>wally live</h1>
     <div id="info" class="muted">connecting…</div>
+    <div id="path-source" class="muted hidden">
+      Path source: <span id="path-source-label"></span>
+      <button type="button" id="path-source-clear">✕</button>
+    </div>
 
     <div id="tabs">
       <button type="button" class="tab-btn active" data-tab="query">Query</button>
       <button type="button" class="tab-btn" data-tab="files">Files</button>
+      <button type="button" class="tab-btn" data-tab="functions">Functions</button>
     </div>
 
     <div id="tab-query" class="tab-pane active">
@@ -71,6 +76,11 @@
       <input type="text" id="file-filter" placeholder="Filter files…" />
       <ul id="file-list"></ul>
     </div>
+
+    <div id="tab-functions" class="tab-pane">
+      <input type="text" id="function-search" placeholder="Search functions… (2+ chars)" />
+      <ul id="function-list"></ul>
+    </div>
   </div>
   <div id="code">
     <div id="code-header" class="muted">Click a node to view its source.</div>
@@ -84,6 +94,8 @@
 </div>
 <div id="context-menu" class="hidden">
   <button type="button" id="context-menu-show-graph">Show graph for this function</button>
+  <button type="button" id="context-menu-set-source">Set as path source</button>
+  <button type="button" id="context-menu-find-path" class="hidden">Find path from source here</button>
 </div>
 <script src="app.js"></script>
 </body>

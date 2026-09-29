@@ -64,6 +64,14 @@ html, body {
   pointer-events: none;
 }
 
+.wally-arg-box {
+  position: absolute;
+  border: 1px solid rgba(56, 189, 248, 0.9);
+  background: rgba(56, 189, 248, 0.18);
+  border-radius: 2px;
+  cursor: help;
+}
+
 #right {
   flex: 1;
   position: relative;
@@ -272,4 +280,59 @@ h1 {
 
 #context-menu button:hover {
   background: #edf2f7;
+}
+
+#function-search {
+  padding: 4px 6px;
+  font-size: 13px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+}
+
+#function-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+#function-list li {
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#function-list li:hover {
+  background: #f7fafc;
+}
+
+#function-list li > div:first-child {
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+
+#path-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  border-radius: 4px;
+}
+
+#path-source-label {
+  font-family: ui-monospace, monospace;
+  font-weight: bold;
+  word-break: break-all;
+}
+
+#path-source-clear {
+  margin-left: auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #0e7490;
+  font-size: 13px;
 }
