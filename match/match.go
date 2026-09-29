@@ -72,6 +72,29 @@ type CallPath struct {
 	VerificationAttempted bool
 }
 
+// FrameUnconfirmed reports whether the frame at index x (innermost-first,
+// same indexing as Nodes) falls outside the confirmed-import prefix -- the
+// same test both the plain-text reporter's "[unconfirmed]" marker and any
+// other presentation of a path should use, so they can't drift apart.
+func (cp *CallPath) FrameUnconfirmed(x int) bool {
+	return cp.VerificationAttempted && x >= cp.ConfirmedDepth
+}
+
+// UnconfirmedCount is how many outer frames fall outside the confirmed
+// prefix -- 0 when the whole path is confirmed or verification wasn't
+// attempted.
+func (cp *CallPath) UnconfirmedCount() int {
+	return len(cp.Nodes) - cp.ConfirmedDepth
+}
+
+// NoImportPathFound reports whether even the innermost hop -- the call
+// directly into the matched target -- failed to confirm, the strongest
+// signal that the whole path is a callgraph over-approximation artifact
+// rather than a real relationship.
+func (cp *CallPath) NoImportPathFound() bool {
+	return cp.VerificationAttempted && cp.ConfirmedDepth == 0 && len(cp.Nodes) > 0
+}
+
 func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, filterLimited bool, simplify bool) {
 	callPath := CallPath{NodeLimited: nodeLimited, FilterLimited: filterLimited}
 
