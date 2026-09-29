@@ -384,9 +384,15 @@ func (n *Navigator) Run(pass *analysis.Pass) (interface{}, error) {
 			// Whether we are able to get params or not we have a match
 			funcMatch := match.NewRouteMatch(*route, pos)
 
+			// funcInfo.EnclosedBy is nil whenever this call site has no
+			// enclosing function at all -- e.g. a package-level var/const
+			// initializer calling the matched function directly, not from
+			// inside any func body. There's no further fallback in that
+			// case; funcMatch.Module is left at its zero value ("") rather
+			// than dereferencing a nil *FuncDecl.
 			if modName := n.GetModuleName(funcInfo.Pkg); modName != "" {
 				funcMatch.Module = modName
-			} else {
+			} else if funcInfo.EnclosedBy != nil {
 				funcMatch.Module = n.GetModuleName(funcInfo.EnclosedBy.Pkg)
 			}
 

@@ -121,15 +121,39 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	s.mu.Lock()
-	matches := s.nav.Query(q)
-	s.mu.Unlock()
+	matches, err := s.queryLocked(q)
 	elapsed := time.Since(start)
+	if err != nil {
+		log.Printf("query pkg=%s func=%s recv-type=%q PANIC: %s", q.Pkg, q.Func, q.RecvType, err)
+		writeError(w, http.StatusInternalServerError, "internal error resolving this query -- see server logs")
+		return
+	}
 
 	log.Printf("query pkg=%s func=%s recv-type=%q matches=%d elapsed=%s",
 		q.Pkg, q.Func, q.RecvType, len(matches), elapsed)
 
 	writeJSON(w, http.StatusOK, buildQueryResponse(q, matches, elapsed))
+}
+
+// queryLocked runs nav.Query under the server's mutex, recovering from any
+// panic in it -- a bad AST shape somewhere in a huge, real codebase is a
+// "when," not an "if" (see navigator.Run's own funcInfo.EnclosedBy-nil fix
+// this same bug report led to). Without this recover, a panic mid-Query
+// unwinds straight past the plain s.mu.Unlock() below it, which never
+// executes -- net/http recovers the panic per-connection and that one
+// request fails, but the mutex stays locked forever, silently wedging
+// every query after it, forever, with no further errors logged. defer
+// (both the recover and the Unlock) is what makes this safe regardless of
+// where inside nav.Query things go wrong.
+func (s *Server) queryLocked(q navigator.QueryParams) (matches []match.RouteMatch, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	return s.nav.Query(q), nil
 }
 
 // buildQueryResponse builds the response shape both /api/query and
@@ -191,9 +215,13 @@ func (s *Server) handleQueryThrough(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	s.mu.Lock()
-	matches := s.nav.Query(req.Sink)
-	s.mu.Unlock()
+	matches, err := s.queryLocked(req.Sink)
+	if err != nil {
+		log.Printf("query-through sink=%s.%s source=%s.%s PANIC: %s",
+			req.Sink.Pkg, req.Sink.Func, req.Source.Pkg, req.Source.Function, err)
+		writeError(w, http.StatusInternalServerError, "internal error resolving this query -- see server logs")
+		return
+	}
 	matches = FilterPathsThroughFunction(matches, req.Source.Pkg, req.Source.Function, req.Source.RecvType)
 	elapsed := time.Since(start)
 
