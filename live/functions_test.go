@@ -1,6 +1,7 @@
 package live_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hex0punk/wally/live"
@@ -68,5 +69,78 @@ func TestFunctionIndex_UnknownFile(t *testing.T) {
 
 	if _, _, _, ok := idx.Resolve("does/not/exist.go", 1); ok {
 		t.Fatal("expected an unindexed file to not resolve")
+	}
+}
+
+func TestFunctionIndex_SearchMatchesCaseInsensitiveSubstring(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	results := idx.Search("crossinterface", 10)
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1: %+v", len(results), results)
+	}
+	if results[0].Function != "RunCrossInterface" {
+		t.Fatalf("got Function=%q, want RunCrossInterface", results[0].Function)
+	}
+}
+
+func TestFunctionIndex_SearchMatchesMethodByReceiverDotName(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	// "handle" is only a substring of "Handler.Handle" once RecvType is
+	// folded into the search haystack -- proves method results are
+	// searchable by more than just the bare method name.
+	results := idx.Search("handle", 10)
+	found := false
+	for _, r := range results {
+		if r.Function == "Handle" && r.RecvType == "Handler" {
+			found = true
+			if r.Pkg != "github.com/hex0punk/wally/sampleapp/bound" {
+				t.Fatalf("got Pkg=%q, want .../bound", r.Pkg)
+			}
+			if r.File == "" || r.Line == 0 {
+				t.Fatalf("expected a real file/line, got File=%q Line=%d", r.File, r.Line)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected (*Handler).Handle among results, got %+v", results)
+	}
+}
+
+func TestFunctionIndex_SearchCapsAtLimit(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	// "run" matches at least RunBound, RunCrossInterface, RunAll.
+	results := idx.Search("run", 1)
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want exactly 1 (limit)", len(results))
+	}
+}
+
+func TestFunctionIndex_SearchEmptyQueryReturnsNoResults(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	if results := idx.Search("", 50); len(results) != 0 {
+		t.Fatalf("expected no results for an empty query, got %d", len(results))
+	}
+}
+
+func TestFunctionIndex_SearchExcludesClosuresAndBoundWrappers(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	// Neither a closure nor a $bound wrapper is independently queryable via
+	// --pkg/--func, so neither should ever surface as a search result --
+	// every real *ssa.Function's own Name() is "$"-free; only synthetic
+	// closures ("...$1") and bound wrappers ("Handle$bound") carry one.
+	for _, r := range idx.Search("handle", 200) {
+		if strings.Contains(r.Function, "$") {
+			t.Fatalf("expected no synthetic closure/bound entries in search results, got %+v", r)
+		}
 	}
 }

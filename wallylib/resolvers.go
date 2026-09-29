@@ -10,6 +10,77 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
+// ResolvedArg is one positional argument of a matched call site: its
+// compile-time value if GetValueFromExp could resolve one, and its source
+// span so a UI can highlight exactly that argument's token range.
+type ResolvedArg struct {
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	Line    int    `json:"line"`
+	Col     int    `json:"col"`
+	EndLine int    `json:"endLine"`
+	EndCol  int    `json:"endCol"`
+}
+
+// ResolveAllArgs resolves every positional argument of ce generically --
+// not just ones an indicator config names via RouteParam (see
+// ResolveParams) -- keyed by the matched function's own parameter name
+// from sig. Unlike ResolveParams, this needs no indicator config at all,
+// which is what wally live's ad-hoc pkg/func queries build (see
+// navigator.QueryParams.indicator): they have no RouteParam list to
+// declare interest in specific args ahead of time.
+//
+// An argument GetValueFromExp couldn't resolve at all (returns "") is
+// omitted -- nothing useful to show. One it resolved to a best-effort
+// "<var x.y>" label is kept, matching GetValueFromExp's own existing
+// convention of surfacing that as better than nothing.
+func ResolveAllArgs(sig *types.Signature, ce *ast.CallExpr, pass *analysis.Pass) []ResolvedArg {
+	if ce == nil || len(ce.Args) == 0 {
+		return nil
+	}
+	var out []ResolvedArg
+	for i, arg := range ce.Args {
+		val := GetValueFromExp(arg, pass)
+		if val == "" {
+			continue
+		}
+		start := pass.Fset.Position(arg.Pos())
+		end := pass.Fset.Position(arg.End())
+		out = append(out, ResolvedArg{
+			Name:    paramNameForArgIndex(sig, i),
+			Value:   val,
+			Line:    start.Line,
+			Col:     start.Column,
+			EndLine: end.Line,
+			EndCol:  end.Column,
+		})
+	}
+	return out
+}
+
+// paramNameForArgIndex names the parameter a positional argument binds to,
+// handling a variadic tail (every arg from the last named parameter
+// onward binds to that same parameter). Returns "" if sig is nil or i is
+// out of range for a non-variadic signature -- the caller still shows the
+// resolved value, just without a name, matching how ResolveParams already
+// tolerates an unresolvable name via GetParamPos's own TODO'd fallback.
+func paramNameForArgIndex(sig *types.Signature, i int) string {
+	if sig == nil {
+		return ""
+	}
+	n := sig.Params().Len()
+	if n == 0 {
+		return ""
+	}
+	if sig.Variadic() && i >= n-1 {
+		return sig.Params().At(n - 1).Name()
+	}
+	if i < n {
+		return sig.Params().At(i).Name()
+	}
+	return ""
+}
+
 func ResolveParams(params []indicator.RouteParam, sig *types.Signature, ce *ast.CallExpr, pass *analysis.Pass) map[string]string {
 	resolvedParams := make(map[string]string)
 	for _, param := range params {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/hex0punk/wally/navigator"
 	"github.com/hex0punk/wally/wallylib"
@@ -15,6 +16,18 @@ import (
 type funcEntry struct {
 	Line int
 	Fn   *ssa.Function
+}
+
+// searchEntry is one independently-queryable function, in the same
+// (package, function, receiver type) shape a query form uses, plus its own
+// declaration position so a search result can also jump the code pane
+// straight to it (see live/server.go's handleFunctions).
+type searchEntry struct {
+	Pkg      string
+	Function string
+	RecvType string
+	File     string
+	Line     int
 }
 
 // FunctionIndex resolves a file:line -- typically a right-click in the
@@ -34,6 +47,7 @@ type funcEntry struct {
 type FunctionIndex struct {
 	cwd    string
 	byFile map[string][]funcEntry // each slice sorted by Line ascending
+	search []searchEntry          // sorted by Function, then Pkg, then RecvType -- see Search
 }
 
 // NewFunctionIndex captures the process cwd (see resolveAgainstCwd) and
@@ -47,6 +61,14 @@ func NewFunctionIndex(nav *navigator.Navigator) *FunctionIndex {
 		return idx
 	}
 	fset := nav.SSA.Program.Fset
+	// Same module-boundary narrowing as SourceIndex.ListFiles (see
+	// projectFileSet's own doc comment) -- ssautil.AllFunctions covers
+	// everything type-checking touched, stdlib and third-party dependencies
+	// included, which floods a name search with runtime/stdlib noise a user
+	// searching their own codebase never wants. byFile (Resolve's index)
+	// stays unfiltered on purpose: a right-clicked line can still legitimately
+	// land in third-party code.
+	projectFiles := projectFileSet(nav.Packages)
 
 	for fn := range ssautil.AllFunctions(nav.SSA.Program) {
 		if fn.Pos() == 0 {
@@ -77,13 +99,78 @@ func NewFunctionIndex(nav *navigator.Navigator) *FunctionIndex {
 		// own small sampleapp module, whose positions were already clean.
 		file := filepath.Clean(pos.Filename)
 		idx.byFile[file] = append(idx.byFile[file], funcEntry{Line: pos.Line, Fn: fn})
+
+		// A closure has no package of its own and isn't independently
+		// queryable via --pkg/--func (same reasons Resolve walks past one
+		// via Parent()); it's indexed above for Resolve's file:line lookup,
+		// but excluded here since a search result must be something a query
+		// form can actually target. Third-party/stdlib files are excluded
+		// from search for the same reason projectFileSet exists at all --
+		// see the note above this loop.
+		if wallylib.IsClosure(fn) || fn.Pkg == nil || !projectFiles[file] {
+			continue
+		}
+		recvType := ""
+		if recv := fn.Signature.Recv(); recv != nil {
+			recvType = receiverTypeName(recv.Type())
+		}
+		display := file
+		if rel, err := filepath.Rel(idx.cwd, file); err == nil {
+			display = rel
+		}
+		idx.search = append(idx.search, searchEntry{
+			Pkg:      fn.Pkg.Pkg.Path(),
+			Function: fn.Name(),
+			RecvType: recvType,
+			File:     display,
+			Line:     pos.Line,
+		})
 	}
 	for file := range idx.byFile {
 		entries := idx.byFile[file]
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Line < entries[j].Line })
 		idx.byFile[file] = entries
 	}
+	sort.Slice(idx.search, func(i, j int) bool {
+		a, b := idx.search[i], idx.search[j]
+		if a.Function != b.Function {
+			return a.Function < b.Function
+		}
+		if a.Pkg != b.Pkg {
+			return a.Pkg < b.Pkg
+		}
+		return a.RecvType < b.RecvType
+	})
 	return idx
+}
+
+// Search returns every independently-queryable function whose name --
+// or, for a method, "RecvType.Name" -- contains q as a case-insensitive
+// substring, in a stable alphabetical-by-function-name order, capped at
+// limit. An empty q or non-positive limit returns nil rather than the
+// (potentially huge -- tens of thousands of functions in a large
+// codebase) whole index; the Files tab's browse list can afford to ship
+// everything up front, this can't.
+func (idx *FunctionIndex) Search(q string, limit int) []searchEntry {
+	if q == "" || limit <= 0 {
+		return nil
+	}
+	needle := strings.ToLower(q)
+	out := make([]searchEntry, 0, limit)
+	for _, e := range idx.search {
+		haystack := strings.ToLower(e.Function)
+		if e.RecvType != "" {
+			haystack = strings.ToLower(e.RecvType) + "." + haystack
+		}
+		if !strings.Contains(haystack, needle) {
+			continue
+		}
+		out = append(out, e)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 // Resolve finds the function enclosing file:line and reports it in the

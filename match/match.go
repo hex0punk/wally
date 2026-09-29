@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/hex0punk/wally/indicator"
+	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallynode"
 	"go/token"
 	"go/types"
@@ -12,14 +13,19 @@ import (
 )
 
 type RouteMatch struct {
-	MatchId    string
-	Indicator  indicator.Indicator // It should be FuncInfo instead
-	Params     map[string]string
-	Pos        token.Position
-	Signature  *types.Signature
-	EnclosedBy string
-	Module     string
-	SSA        *SSAContext
+	MatchId   string
+	Indicator indicator.Indicator // It should be FuncInfo instead
+	Params    map[string]string
+	// ResolvedArgs is every positional argument of this match's own call
+	// site that Navigator.Run could resolve a compile-time value for (see
+	// wallylib.ResolveAllArgs) -- nil for a bare func-value match
+	// (matchFuncValueRef), which has no call site to resolve args from.
+	ResolvedArgs []wallylib.ResolvedArg
+	Pos          token.Position
+	Signature    *types.Signature
+	EnclosedBy   string
+	Module       string
+	SSA          *SSAContext
 }
 
 // TODO: I don't love this here, maybe an SSA dedicated pkg would be better

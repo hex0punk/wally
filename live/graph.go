@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/hex0punk/wally/match"
+	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallynode"
 )
 
@@ -48,6 +49,11 @@ type NodeData struct {
 	File string `json:"file"`
 	Line int    `json:"line"`
 	Col  int    `json:"col"`
+	// ResolvedArgs carries the target's own matched call site's resolved
+	// argument values (see wallylib.ResolveAllArgs) so the code pane can
+	// draw a hoverable box on each one. Only ever set on a "target" node --
+	// a "frame" node is a callgraph hop with no retained AST/argument info.
+	ResolvedArgs []wallylib.ResolvedArg `json:"resolvedArgs,omitempty"`
 }
 
 type EdgeElement struct {
@@ -110,6 +116,9 @@ type buildNode struct {
 	unconfirmed   bool
 	confirmedSeen bool
 	paths         map[int]bool
+	// resolvedArgs is only ever set on a "target" node -- see NodeData's
+	// own doc comment for why a "frame" node never carries this.
+	resolvedArgs []wallylib.ResolvedArg
 }
 
 type nodeBuilder struct {
@@ -223,6 +232,7 @@ func BuildGraph(matches []match.RouteMatch) (Elements, []PathInfo, []MatchInfo) 
 			targetKey := m.SSA.TargetPos
 			targetNode := nodes.upsert(targetKey, "target")
 			targetNode.paths[id] = true
+			targetNode.resolvedArgs = m.ResolvedArgs
 
 			displayNodes := make([]string, 0, len(p.Nodes)+1)
 
@@ -306,17 +316,18 @@ func renderNodes(b *nodeBuilder) []NodeElement {
 		file, line, col, _ := parsePosition(n.label)
 		out = append(out, NodeElement{
 			Data: NodeData{
-				ID:          n.id,
-				Label:       n.label,
-				Short:       shortLabel(n.label),
-				Kind:        n.kind,
-				Unconfirmed: n.unconfirmed,
-				Recoverable: n.recoverable,
-				Truncated:   n.truncated,
-				Paths:       pathIDs,
-				File:        file,
-				Line:        line,
-				Col:         col,
+				ID:           n.id,
+				Label:        n.label,
+				Short:        shortLabel(n.label),
+				Kind:         n.kind,
+				Unconfirmed:  n.unconfirmed,
+				Recoverable:  n.recoverable,
+				Truncated:    n.truncated,
+				Paths:        pathIDs,
+				File:         file,
+				Line:         line,
+				Col:          col,
+				ResolvedArgs: n.resolvedArgs,
 			},
 			Classes: classesFor(n.kind, n.unconfirmed, n.recoverable, n.truncated),
 		})

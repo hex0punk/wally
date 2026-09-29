@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hex0punk/wally/match"
 	"github.com/hex0punk/wally/navigator"
 )
 
@@ -63,9 +64,11 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	mux.HandleFunc("/api/info", s.handleInfo)
 	mux.HandleFunc("/api/query", s.handleQuery)
+	mux.HandleFunc("/api/query-through", s.handleQueryThrough)
 	mux.HandleFunc("/api/source", s.handleSource)
 	mux.HandleFunc("/api/files", s.handleFiles)
 	mux.HandleFunc("/api/enclosing", s.handleEnclosing)
+	mux.HandleFunc("/api/functions", s.handleFunctions)
 	return mux, nil
 }
 
@@ -120,14 +123,21 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	s.mu.Lock()
 	matches := s.nav.Query(q)
-	elements, paths, matchInfos := BuildGraph(matches)
 	s.mu.Unlock()
 	elapsed := time.Since(start)
 
-	log.Printf("query pkg=%s func=%s recv-type=%q matches=%d paths=%d elapsed=%s",
-		q.Pkg, q.Func, q.RecvType, len(matches), len(paths), elapsed)
+	log.Printf("query pkg=%s func=%s recv-type=%q matches=%d elapsed=%s",
+		q.Pkg, q.Func, q.RecvType, len(matches), elapsed)
 
-	writeJSON(w, http.StatusOK, queryResponse{
+	writeJSON(w, http.StatusOK, buildQueryResponse(q, matches, elapsed))
+}
+
+// buildQueryResponse builds the response shape both /api/query and
+// /api/query-through return, so a filtered (source→sink) result renders
+// through the exact same frontend path as a normal query.
+func buildQueryResponse(q navigator.QueryParams, matches []match.RouteMatch, elapsed time.Duration) queryResponse {
+	elements, paths, matchInfos := BuildGraph(matches)
+	return queryResponse{
 		Query:      q,
 		ElapsedMs:  float64(elapsed.Microseconds()) / 1000.0,
 		MatchCount: len(matches),
@@ -136,7 +146,61 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		Elements:   elements,
 		Paths:      paths,
 		Matches:    matchInfos,
-	})
+	}
+}
+
+type queryThroughSource struct {
+	Pkg      string `json:"pkg"`
+	Function string `json:"function"`
+	RecvType string `json:"recvType"`
+}
+
+type queryThroughRequest struct {
+	Sink   navigator.QueryParams `json:"sink"`
+	Source queryThroughSource    `json:"source"`
+}
+
+// handleQueryThrough answers "does any path to this sink pass through that
+// source function" -- runs the normal sink query, then keeps only the
+// paths that pass through Source somewhere (see FilterPathsThroughFunction),
+// dropping any match left with zero surviving paths. Responds in the same
+// shape /api/query does, via buildQueryResponse, so the frontend renders
+// it identically -- zero matches after filtering just means "no path found
+// through that source," not an error, so this is still a 200.
+func (s *Server) handleQueryThrough(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	req := queryThroughRequest{Sink: navigator.DefaultQueryParams()}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %s", err))
+		return
+	}
+	if err := req.Sink.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Source.Pkg == "" || req.Source.Function == "" {
+		writeError(w, http.StatusBadRequest, "source pkg and function are required")
+		return
+	}
+
+	start := time.Now()
+	s.mu.Lock()
+	matches := s.nav.Query(req.Sink)
+	s.mu.Unlock()
+	matches = FilterPathsThroughFunction(matches, req.Source.Pkg, req.Source.Function, req.Source.RecvType)
+	elapsed := time.Since(start)
+
+	log.Printf("query-through sink=%s.%s source=%s.%s matches=%d elapsed=%s",
+		req.Sink.Pkg, req.Sink.Func, req.Source.Pkg, req.Source.Function, len(matches), elapsed)
+
+	writeJSON(w, http.StatusOK, buildQueryResponse(req.Sink, matches, elapsed))
 }
 
 type sourceResponse struct {
@@ -238,6 +302,62 @@ func (s *Server) handleEnclosing(w http.ResponseWriter, r *http.Request) {
 		Function: function,
 		RecvType: recvType,
 	})
+}
+
+type functionSearchResult struct {
+	Pkg      string `json:"pkg"`
+	Function string `json:"function"`
+	RecvType string `json:"recvType"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+}
+
+type functionsResponse struct {
+	Results []functionSearchResult `json:"results"`
+}
+
+// defaultFunctionSearchLimit/maxFunctionSearchLimit bound how many results
+// a single search returns -- a large codebase can have tens of thousands
+// of functions, so unlike /api/files (fetched once, filtered client-side)
+// this is filtered server-side per request and capped regardless of what
+// the caller asks for.
+const (
+	defaultFunctionSearchLimit = 50
+	maxFunctionSearchLimit     = 200
+)
+
+// handleFunctions powers the Functions tab's search-as-you-type: an empty
+// or missing q returns no results rather than the whole index (see
+// FunctionIndex.Search).
+func (s *Server) handleFunctions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "GET only")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	limit := defaultFunctionSearchLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > maxFunctionSearchLimit {
+		limit = maxFunctionSearchLimit
+	}
+
+	matches := s.functionIndex.Search(q, limit)
+	results := make([]functionSearchResult, 0, len(matches))
+	for _, m := range matches {
+		results = append(results, functionSearchResult{
+			Pkg:      m.Pkg,
+			Function: m.Function,
+			RecvType: m.RecvType,
+			File:     m.File,
+			Line:     m.Line,
+		})
+	}
+	writeJSON(w, http.StatusOK, functionsResponse{Results: results})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
