@@ -88,6 +88,22 @@ func NewFunctionIndex(nav *navigator.Navigator) *FunctionIndex {
 		if wallylib.IsBoundFunc(fn) {
 			continue
 		}
+		// The same coin-flip applies to any OTHER function with no package
+		// of its own that isn't a closure -- confirmed against a real,
+		// large codebase: a type embedding another type's pointer gets a
+		// synthetic method-promotion thunk for each promoted method (e.g.
+		// embedding *Base, which declares Handle, synthesizes a wrapper
+		// Handle on the embedding type too -- see sampleapp/embed),
+		// positioned at the exact same line as the real method since it has
+		// no declaration of its own to be positioned at. Resolve's own final
+		// check already rejects fn.Pkg == nil unconditionally, so a
+		// tie-broken pick of one of these is never a useful answer either --
+		// unlike a closure, which legitimately needs to stay indexed here
+		// for Resolve's walk-up-via-Parent() to find when a line lands
+		// inside one.
+		if !wallylib.IsClosure(fn) && fn.Pkg == nil {
+			continue
+		}
 		pos := fset.Position(fn.Pos())
 		// Cleaned to match resolveAgainstCwd's own output exactly -- pos.Filename
 		// isn't guaranteed to already be in Clean form (e.g. a non-canonical

@@ -63,6 +63,34 @@ func TestFunctionIndex_NoFunctionBeforeFirstDeclaration(t *testing.T) {
 	}
 }
 
+// TestFunctionIndex_ResolvesEmbeddedMethodDespiteSyntheticThunkTie is a
+// regression test for a second instance of the same unstable-sort-tie bug
+// class the $bound exclusion already fixes above, but for a different
+// synthetic function kind: a type embedding another's pointer (here,
+// embed.Wrapper embedding *embed.Base) gets a synthetic method-promotion
+// thunk for each promoted method, positioned at the SAME line as the real
+// method since it has no declaration of its own -- sampleapp/embed's
+// Handle has three *ssa.Function entries at its single declaration line
+// (the real method, plus two promotion thunks with no package of their
+// own). Left unindexed-against, sort.Slice's instability made which of
+// the three Resolve's binary search landed on a coin flip across runs --
+// confirmed against a real, large codebase where this intermittently broke
+// a working right-click resolution with no code change in between.
+func TestFunctionIndex_ResolvesEmbeddedMethodDespiteSyntheticThunkTie(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	for i := 0; i < 10; i++ {
+		pkg, fn, recv, ok := idx.Resolve("embed/embed.go", 13)
+		if !ok {
+			t.Fatalf("run %d: expected embed/embed.go:13 to resolve", i)
+		}
+		if pkg != "github.com/hex0punk/wally/sampleapp/embed" || fn != "Handle" || recv != "Base" {
+			t.Fatalf("run %d: got pkg=%q fn=%q recv=%q, want pkg=.../embed fn=Handle recv=Base", i, pkg, fn, recv)
+		}
+	}
+}
+
 func TestFunctionIndex_UnknownFile(t *testing.T) {
 	nav, _ := buildSampleappNavigator(t)
 	idx := live.NewFunctionIndex(nav)
