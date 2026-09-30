@@ -83,6 +83,17 @@
 
     <div id="tab-functions" class="tab-pane">
       <input type="text" id="function-search" placeholder="Search functions… (2+ chars)" />
+      <div id="package-filter">
+        <button type="button" id="package-filter-toggle">Packages: All</button>
+        <div id="package-filter-panel" class="hidden">
+          <input type="text" id="package-filter-search" placeholder="Filter packages…" />
+          <div id="package-filter-actions">
+            <button type="button" id="package-filter-select-all">Select all</button>
+            <button type="button" id="package-filter-clear">Clear (no filter)</button>
+          </div>
+          <ul id="package-filter-list"></ul>
+        </div>
+      </div>
       <ul id="function-list"></ul>
     </div>
   </div>

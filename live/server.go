@@ -69,6 +69,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/files", recoverMiddleware(s.handleFiles))
 	mux.HandleFunc("/api/enclosing", recoverMiddleware(s.handleEnclosing))
 	mux.HandleFunc("/api/functions", recoverMiddleware(s.handleFunctions))
+	mux.HandleFunc("/api/packages", recoverMiddleware(s.handlePackages))
 	return mux, nil
 }
 
@@ -393,8 +394,12 @@ func (s *Server) handleFunctions(w http.ResponseWriter, r *http.Request) {
 	if limit > maxFunctionSearchLimit {
 		limit = maxFunctionSearchLimit
 	}
+	// Repeated ?pkg=a&pkg=b, not a single comma-separated value -- a package
+	// import path can't contain a comma, but this also just matches how a
+	// multi-select control naturally serializes into a query string.
+	pkgs := r.URL.Query()["pkg"]
 
-	matches := s.functionIndex.Search(q, limit)
+	matches := s.functionIndex.Search(q, limit, pkgs)
 	results := make([]functionSearchResult, 0, len(matches))
 	for _, m := range matches {
 		results = append(results, functionSearchResult{
@@ -406,6 +411,21 @@ func (s *Server) handleFunctions(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, functionsResponse{Results: results})
+}
+
+type packagesResponse struct {
+	Packages []string `json:"packages"`
+}
+
+// handlePackages lists every package with at least one independently-
+// queryable function (the same set /api/functions searches over) --
+// powers the Functions tab's package-filter dropdown.
+func (s *Server) handlePackages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "GET only")
+		return
+	}
+	writeJSON(w, http.StatusOK, packagesResponse{Packages: s.functionIndex.Packages()})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

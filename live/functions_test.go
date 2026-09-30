@@ -104,7 +104,7 @@ func TestFunctionIndex_SearchMatchesCaseInsensitiveSubstring(t *testing.T) {
 	nav, _ := buildSampleappNavigator(t)
 	idx := live.NewFunctionIndex(nav)
 
-	results := idx.Search("crossinterface", 10)
+	results := idx.Search("crossinterface", 10, nil)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1: %+v", len(results), results)
 	}
@@ -120,7 +120,7 @@ func TestFunctionIndex_SearchMatchesMethodByReceiverDotName(t *testing.T) {
 	// "handle" is only a substring of "Handler.Handle" once RecvType is
 	// folded into the search haystack -- proves method results are
 	// searchable by more than just the bare method name.
-	results := idx.Search("handle", 10)
+	results := idx.Search("handle", 10, nil)
 	found := false
 	for _, r := range results {
 		if r.Function == "Handle" && r.RecvType == "Handler" {
@@ -143,7 +143,7 @@ func TestFunctionIndex_SearchCapsAtLimit(t *testing.T) {
 	idx := live.NewFunctionIndex(nav)
 
 	// "run" matches at least RunBound, RunCrossInterface, RunAll.
-	results := idx.Search("run", 1)
+	results := idx.Search("run", 1, nil)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want exactly 1 (limit)", len(results))
 	}
@@ -153,8 +153,57 @@ func TestFunctionIndex_SearchEmptyQueryReturnsNoResults(t *testing.T) {
 	nav, _ := buildSampleappNavigator(t)
 	idx := live.NewFunctionIndex(nav)
 
-	if results := idx.Search("", 50); len(results) != 0 {
+	if results := idx.Search("", 50, nil); len(results) != 0 {
 		t.Fatalf("expected no results for an empty query, got %d", len(results))
+	}
+}
+
+func TestFunctionIndex_SearchFiltersByPackage(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	// "run" matches RunBound/RunCrossInterface/RunAll in the root sampleapp
+	// package plus RunSafely (safe) and RunWithWorker (caller) -- restricting
+	// to just the caller package should leave exactly RunWithWorker.
+	results := idx.Search("run", 50, []string{"github.com/hex0punk/wally/sampleapp/caller"})
+	if len(results) != 1 {
+		t.Fatalf("got %d results restricted to the caller package, want 1: %+v", len(results), results)
+	}
+	if results[0].Function != "RunWithWorker" {
+		t.Fatalf("got Function=%q, want RunWithWorker", results[0].Function)
+	}
+}
+
+func TestFunctionIndex_SearchEmptyPackageFilterMeansNoFilter(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	all := idx.Search("run", 50, nil)
+	explicit := idx.Search("run", 50, []string{})
+	if len(all) != len(explicit) {
+		t.Fatalf("nil and empty-slice package filters should behave identically (no filter), got %d vs %d", len(all), len(explicit))
+	}
+}
+
+func TestFunctionIndex_Packages(t *testing.T) {
+	nav, _ := buildSampleappNavigator(t)
+	idx := live.NewFunctionIndex(nav)
+
+	pkgs := idx.Packages()
+	want := "github.com/hex0punk/wally/sampleapp/caller"
+	found := false
+	for _, p := range pkgs {
+		if p == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected %q among Packages(), got %+v", want, pkgs)
+	}
+	for i := 1; i < len(pkgs); i++ {
+		if pkgs[i-1] > pkgs[i] {
+			t.Fatalf("Packages() not sorted: %q came before %q", pkgs[i-1], pkgs[i])
+		}
 	}
 }
 
@@ -166,7 +215,7 @@ func TestFunctionIndex_SearchExcludesClosuresAndBoundWrappers(t *testing.T) {
 	// --pkg/--func, so neither should ever surface as a search result --
 	// every real *ssa.Function's own Name() is "$"-free; only synthetic
 	// closures ("...$1") and bound wrappers ("Handle$bound") carry one.
-	for _, r := range idx.Search("handle", 200) {
+	for _, r := range idx.Search("handle", 200, nil) {
 		if strings.Contains(r.Function, "$") {
 			t.Fatalf("expected no synthetic closure/bound entries in search results, got %+v", r)
 		}

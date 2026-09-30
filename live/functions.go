@@ -45,9 +45,10 @@ type searchEntry struct {
 // is available regardless of which set it came from, and that's all this
 // needs.
 type FunctionIndex struct {
-	cwd    string
-	byFile map[string][]funcEntry // each slice sorted by Line ascending
-	search []searchEntry          // sorted by Function, then Pkg, then RecvType -- see Search
+	cwd      string
+	byFile   map[string][]funcEntry // each slice sorted by Line ascending
+	search   []searchEntry          // sorted by Function, then Pkg, then RecvType -- see Search
+	packages []string               // every distinct Pkg among search entries, sorted -- see Packages
 }
 
 // NewFunctionIndex captures the process cwd (see resolveAgainstCwd) and
@@ -157,7 +158,26 @@ func NewFunctionIndex(nav *navigator.Navigator) *FunctionIndex {
 		}
 		return a.RecvType < b.RecvType
 	})
+
+	pkgSet := map[string]bool{}
+	for _, e := range idx.search {
+		pkgSet[e.Pkg] = true
+	}
+	idx.packages = make([]string, 0, len(pkgSet))
+	for p := range pkgSet {
+		idx.packages = append(idx.packages, p)
+	}
+	sort.Strings(idx.packages)
+
 	return idx
+}
+
+// Packages returns every distinct package that has at least one
+// independently-queryable function in the search index (the same set
+// Search already draws from), sorted -- the Functions tab's package-filter
+// dropdown lists exactly this.
+func (idx *FunctionIndex) Packages() []string {
+	return idx.packages
 }
 
 // Search returns every independently-queryable function whose name --
@@ -167,13 +187,28 @@ func NewFunctionIndex(nav *navigator.Navigator) *FunctionIndex {
 // (potentially huge -- tens of thousands of functions in a large
 // codebase) whole index; the Files tab's browse list can afford to ship
 // everything up front, this can't.
-func (idx *FunctionIndex) Search(q string, limit int) []searchEntry {
+//
+// pkgs, when non-empty, restricts results to exactly those packages (the
+// Functions tab's package-filter dropdown) -- an empty pkgs means no
+// filter at all, matching "nothing checked" reading as "search everything"
+// rather than "search nothing."
+func (idx *FunctionIndex) Search(q string, limit int, pkgs []string) []searchEntry {
 	if q == "" || limit <= 0 {
 		return nil
+	}
+	var pkgFilter map[string]bool
+	if len(pkgs) > 0 {
+		pkgFilter = make(map[string]bool, len(pkgs))
+		for _, p := range pkgs {
+			pkgFilter[p] = true
+		}
 	}
 	needle := strings.ToLower(q)
 	out := make([]searchEntry, 0, limit)
 	for _, e := range idx.search {
+		if pkgFilter != nil && !pkgFilter[e.Pkg] {
+			continue
+		}
 		haystack := strings.ToLower(e.Function)
 		if e.RecvType != "" {
 			haystack = strings.ToLower(e.RecvType) + "." + haystack

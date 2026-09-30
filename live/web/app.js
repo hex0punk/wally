@@ -93,6 +93,12 @@
   var fileListEl = document.getElementById("file-list");
   var functionSearchEl = document.getElementById("function-search");
   var functionListEl = document.getElementById("function-list");
+  var packageFilterToggleEl = document.getElementById("package-filter-toggle");
+  var packageFilterPanelEl = document.getElementById("package-filter-panel");
+  var packageFilterSearchEl = document.getElementById("package-filter-search");
+  var packageFilterListEl = document.getElementById("package-filter-list");
+  var packageFilterSelectAllEl = document.getElementById("package-filter-select-all");
+  var packageFilterClearEl = document.getElementById("package-filter-clear");
   var contextMenuEl = document.getElementById("context-menu");
   var contextMenuShowGraphEl = document.getElementById("context-menu-show-graph");
   var contextMenuSetSourceEl = document.getElementById("context-menu-set-source");
@@ -113,6 +119,8 @@
   var pendingContextLine = null; // line the context menu is currently open for
   var functionSearchSeq = 0;
   var functionSearchTimer = null;
+  var allPackages = null; // populated once from /api/packages, filtered client-side within the dropdown
+  var selectedPackages = new Set(); // empty = no filter, search every package
   var pathSourceFn = null; // {pkg, function, recvType, label} set via the context menu's "Set as path source"
   // queryHistory/historyIndex is a browser-style back/forward stack over
   // every function query that's actually run (form submit, Functions-tab
@@ -813,10 +821,12 @@
     });
   }
 
-  functionSearchEl.addEventListener("input", function () {
+  // runFunctionSearch is the actual /api/functions fetch, shared by the
+  // search input's own debounced handler and every package-filter action
+  // (checkbox toggle, select all, clear) that needs to immediately re-run
+  // whatever search is currently active.
+  function runFunctionSearch() {
     var q = functionSearchEl.value.trim();
-    if (functionSearchTimer) clearTimeout(functionSearchTimer);
-
     if (q.length < 2) {
       functionListEl.innerHTML = q.length === 0
         ? ""
@@ -824,19 +834,129 @@
       return;
     }
 
-    functionSearchTimer = setTimeout(function () {
-      var mySeq = ++functionSearchSeq;
-      fetch("/api/functions?q=" + encodeURIComponent(q) + "&limit=50")
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (mySeq !== functionSearchSeq) return; // a newer keystroke already landed
-          renderFunctionList(data.results || []);
-        })
-        .catch(function () {
-          if (mySeq !== functionSearchSeq) return;
-          functionListEl.innerHTML = "<li class=\"muted error\">search failed</li>";
-        });
-    }, 200);
+    var mySeq = ++functionSearchSeq;
+    var url = "/api/functions?q=" + encodeURIComponent(q) + "&limit=50";
+    selectedPackages.forEach(function (p) { url += "&pkg=" + encodeURIComponent(p); });
+
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (mySeq !== functionSearchSeq) return; // a newer search already landed
+        renderFunctionList(data.results || []);
+      })
+      .catch(function () {
+        if (mySeq !== functionSearchSeq) return;
+        functionListEl.innerHTML = "<li class=\"muted error\">search failed</li>";
+      });
+  }
+
+  functionSearchEl.addEventListener("input", function () {
+    if (functionSearchTimer) clearTimeout(functionSearchTimer);
+    functionSearchTimer = setTimeout(runFunctionSearch, 200);
+  });
+
+  // ---- Functions tab: package filter dropdown ------------------------------
+  // A checklist over every package that has at least one searchable
+  // function, so a search can be scoped to one service/package instead of
+  // matching same-named functions across the whole loaded scope. Nothing
+  // checked means no filter at all -- deliberately, so the default state
+  // ("nothing checked yet") reads as "search everything," not "search
+  // nothing."
+  function updatePackageFilterButton() {
+    var n = selectedPackages.size;
+    packageFilterToggleEl.textContent = n === 0
+      ? "Packages: All"
+      : "Packages: " + n + " selected";
+    packageFilterToggleEl.classList.toggle("active-filter", n > 0);
+  }
+
+  function renderPackageFilterList(pkgs) {
+    packageFilterListEl.innerHTML = "";
+    if (pkgs.length === 0) {
+      packageFilterListEl.innerHTML = "<li class=\"muted\">no packages match</li>";
+      return;
+    }
+    pkgs.forEach(function (p) {
+      var li = document.createElement("li");
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = selectedPackages.has(p);
+      var label = document.createElement("span");
+      label.textContent = p;
+      li.appendChild(cb);
+      li.appendChild(label);
+      li.addEventListener("click", function () {
+        if (selectedPackages.has(p)) {
+          selectedPackages.delete(p);
+        } else {
+          selectedPackages.add(p);
+        }
+        cb.checked = selectedPackages.has(p);
+        updatePackageFilterButton();
+        runFunctionSearch();
+      });
+      packageFilterListEl.appendChild(li);
+    });
+  }
+
+  function loadPackagesIfNeeded() {
+    if (allPackages !== null) return;
+    packageFilterListEl.innerHTML = "<li class=\"muted\">loading…</li>";
+    fetch("/api/packages")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        allPackages = data.packages || [];
+        renderPackageFilterList(allPackages);
+      })
+      .catch(function () {
+        packageFilterListEl.innerHTML = "<li class=\"muted error\">could not load package list</li>";
+      });
+  }
+
+  packageFilterToggleEl.addEventListener("click", function (evt) {
+    evt.stopPropagation();
+    var opening = packageFilterPanelEl.classList.contains("hidden");
+    packageFilterPanelEl.classList.toggle("hidden", !opening);
+    if (opening) loadPackagesIfNeeded();
+  });
+
+  packageFilterPanelEl.addEventListener("click", function (evt) {
+    evt.stopPropagation(); // clicks inside the panel shouldn't close it
+  });
+
+  document.addEventListener("click", function () {
+    packageFilterPanelEl.classList.add("hidden");
+  });
+
+  packageFilterSearchEl.addEventListener("input", function () {
+    if (allPackages === null) return;
+    var needle = packageFilterSearchEl.value.trim().toLowerCase();
+    var filtered = needle
+      ? allPackages.filter(function (p) { return p.toLowerCase().indexOf(needle) !== -1; })
+      : allPackages;
+    renderPackageFilterList(filtered);
+  });
+
+  packageFilterSelectAllEl.addEventListener("click", function () {
+    // Selects whatever the package-filter search has currently narrowed the
+    // list down to, not necessarily every package -- lets "type a prefix,
+    // select all" scope to a whole subtree (e.g. every package under one
+    // service) in two clicks instead of checking each box by hand.
+    var needle = packageFilterSearchEl.value.trim().toLowerCase();
+    var visible = needle && allPackages
+      ? allPackages.filter(function (p) { return p.toLowerCase().indexOf(needle) !== -1; })
+      : (allPackages || []);
+    visible.forEach(function (p) { selectedPackages.add(p); });
+    renderPackageFilterList(visible);
+    updatePackageFilterButton();
+    runFunctionSearch();
+  });
+
+  packageFilterClearEl.addEventListener("click", function () {
+    selectedPackages.clear();
+    if (allPackages !== null) renderPackageFilterList(allPackages);
+    updatePackageFilterButton();
+    runFunctionSearch();
   });
 
   // ---- Right-click context menu: jump from source to its call graph ------
