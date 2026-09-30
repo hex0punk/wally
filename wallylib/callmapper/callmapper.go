@@ -485,6 +485,22 @@ func (cm *CallMapper) buildWallyNode(s *callgraph.Node, site ssa.CallInstruction
 		return cm.NodeFactory.CreateWallyNode("", s, site)
 	}
 
+	// A $bound wrapper's own Package() is nil (it has no package of its
+	// own -- see wallylib.IsBoundFunc), which would otherwise fall into the
+	// raw s.String() fallback just below: an uninformative label like
+	// "n123:(*T).Method$bound" with no parseable position in it at all, so
+	// e.g. the live UI's code viewer can only ever report "No source
+	// position available" for it. Its Pos() is still valid though --
+	// confirmed it resolves to the wrapped method's own real declaration
+	// site (e.g. (*os.File).Read$bound's Pos() resolves to Read's own
+	// declaration line) -- and GetNodeString/GetFormattedPosFromFunc
+	// already handle a nil Package() gracefully (empty package name,
+	// falling back to Pos() when a call-site position isn't available), so
+	// route it through that same formatting path instead of the raw one.
+	if !cm.Options.PrintNodes && wallylib.IsBoundFunc(s.Func) {
+		return cm.NodeFactory.CreateWallyNode("", s, site)
+	}
+
 	if cm.Options.PrintNodes || s.Func.Package() == nil {
 		return cm.NodeFactory.CreateWallyNode(s.String(), s, site)
 	}

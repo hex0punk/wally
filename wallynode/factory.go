@@ -24,6 +24,8 @@ func (f *WallyNodeFactory) CreateWallyNode(nodeStr string, caller *callgraph.Nod
 			pkgName := ""
 			if pkg := caller.Func.Package(); pkg != nil {
 				pkgName = pkg.Pkg.Name()
+			} else {
+				pkgName = wallylib.BoundFuncReceiverTypeName(caller.Func)
 			}
 			nodeStr = fmt.Sprintf("Func: %s.[%s] %s", pkgName, caller.Func.Name(), wallylib.GetFormattedPosFromFunc(caller.Func, caller.Func.Pos()))
 		} else {

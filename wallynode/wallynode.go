@@ -49,6 +49,8 @@ func GetNodeString(basePos string, s *callgraph.Node, recoverable bool) string {
 	pkgName := ""
 	if pkg := function.Package(); pkg != nil {
 		pkgName = pkg.Pkg.Name()
+	} else {
+		pkgName = wallylib.BoundFuncReceiverTypeName(function)
 	}
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkgName, function.Name(), basePos)
 
