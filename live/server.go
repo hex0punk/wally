@@ -62,14 +62,34 @@ func (s *Server) Handler() (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(sub)))
-	mux.HandleFunc("/api/info", s.handleInfo)
-	mux.HandleFunc("/api/query", s.handleQuery)
-	mux.HandleFunc("/api/query-through", s.handleQueryThrough)
-	mux.HandleFunc("/api/source", s.handleSource)
-	mux.HandleFunc("/api/files", s.handleFiles)
-	mux.HandleFunc("/api/enclosing", s.handleEnclosing)
-	mux.HandleFunc("/api/functions", s.handleFunctions)
+	mux.HandleFunc("/api/info", recoverMiddleware(s.handleInfo))
+	mux.HandleFunc("/api/query", recoverMiddleware(s.handleQuery))
+	mux.HandleFunc("/api/query-through", recoverMiddleware(s.handleQueryThrough))
+	mux.HandleFunc("/api/source", recoverMiddleware(s.handleSource))
+	mux.HandleFunc("/api/files", recoverMiddleware(s.handleFiles))
+	mux.HandleFunc("/api/enclosing", recoverMiddleware(s.handleEnclosing))
+	mux.HandleFunc("/api/functions", recoverMiddleware(s.handleFunctions))
 	return mux, nil
+}
+
+// recoverMiddleware turns a panic anywhere in next into a clean 500
+// response instead of a dropped connection. /api/query and
+// /api/query-through already have their own recover paired with the
+// mutex's defer Unlock in queryLocked -- that pairing has to stay exactly
+// where it is, since the Unlock must happen before this outer recover ever
+// runs. This is a second, harmless safety net for those two, and the only
+// one for the other routes, none of which hold any lock a panic could
+// leave stuck.
+func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic handling %s: %v", r.URL.Path, rec)
+				writeError(w, http.StatusInternalServerError, "internal error handling this request -- see server logs")
+			}
+		}()
+		next(w, r)
+	}
 }
 
 // ListenAndServe starts the server on addr. It never returns on success.
