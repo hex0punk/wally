@@ -100,6 +100,9 @@
   var pathSourceEl = document.getElementById("path-source");
   var pathSourceLabelEl = document.getElementById("path-source-label");
   var pathSourceClearEl = document.getElementById("path-source-clear");
+  var historyBackEl = document.getElementById("history-back");
+  var historyForwardEl = document.getElementById("history-forward");
+  var nodePopoverEl = document.getElementById("node-popover");
 
   var seq = 0;
   var currentAbort = null;
@@ -111,6 +114,16 @@
   var functionSearchSeq = 0;
   var functionSearchTimer = null;
   var pathSourceFn = null; // {pkg, function, recvType, label} set via the context menu's "Set as path source"
+  // queryHistory/historyIndex is a browser-style back/forward stack over
+  // every function query that's actually run (form submit, Functions-tab
+  // click, right-click "show graph", a query-through's sink) -- see
+  // pushHistory/navigateHistory. File/source browsing doesn't push here;
+  // this is specifically "functions selected to query," per the request
+  // that led to this feature.
+  var queryHistory = []; // [{type: "query", body} | {type: "query-through", sinkBody, source}]
+  var historyIndex = -1;
+  var lastPaths = null; // most recent /api/query(-through) response's paths[], for the node hover popover
+  var lastMatches = null; // ...and its matches[]
 
   function setStatus(text, kind) {
     statusEl.textContent = text;
@@ -248,8 +261,9 @@
     codePreEl.querySelectorAll(".wally-arg-box").forEach(function (el) { el.remove(); });
   }
 
-  function showCodeMessage(text) {
+  function showCodeMessage(text, kind) {
     codeHeaderEl.textContent = text;
+    codeHeaderEl.classList.toggle("error", kind === "error");
     codeContentEl.textContent = "";
     clearHighlight();
     clearResolvedArgBoxes();
@@ -271,6 +285,7 @@
     var mySeq = ++sourceSeq;
     currentFile = nodeData.file;
     codeHeaderEl.textContent = formatHeader(nodeData.file, nodeData.line) + " (loading…)";
+    codeHeaderEl.classList.remove("error");
 
     var cached = sourceCache[nodeData.file];
     if (cached !== undefined) {
@@ -285,7 +300,7 @@
       .then(function (res) {
         if (mySeq !== sourceSeq) return; // a newer click already landed
         if (!res.ok) {
-          showCodeMessage("Could not load source: " + (res.data && res.data.error));
+          showCodeMessage("Could not load source: " + (res.data && res.data.error), "error");
           return;
         }
         sourceCache[nodeData.file] = res.data.content;
@@ -293,12 +308,13 @@
       })
       .catch(function (err) {
         if (mySeq !== sourceSeq) return;
-        showCodeMessage("Could not load source: " + err.message);
+        showCodeMessage("Could not load source: " + err.message, "error");
       });
   }
 
   function renderSource(nodeData, content) {
     codeHeaderEl.textContent = formatHeader(nodeData.file, nodeData.line);
+    codeHeaderEl.classList.remove("error");
     codeContentEl.textContent = content;
 
     // Prism.highlightElement is synchronous for a plain (non-worker)
@@ -431,6 +447,103 @@
     }
   });
 
+  // ---- Sink-node hover popover ---------------------------------------------
+  // Everything shown here is already sent in every /api/query(-through)
+  // response -- this is purely surfacing it, no new backend data.
+  // matchInfoForNode resolves a target node back to its MatchInfo via the
+  // same paths[]->matchId->matches[] chain the Paths panel's badges already
+  // implicitly rely on (see applyQueryResponse, which stashes both arrays).
+  function matchInfoForNode(nodeData) {
+    if (!lastPaths || !lastMatches || !nodeData.paths || nodeData.paths.length === 0) return null;
+    var path = lastPaths.filter(function (p) { return p.id === nodeData.paths[0]; })[0];
+    if (!path) return null;
+    return lastMatches.filter(function (m) { return m.id === path.matchId; })[0] || null;
+  }
+
+  function popoverRow(container, label, value) {
+    if (!value) return;
+    var row = document.createElement("div");
+    row.className = "popover-row";
+    var l = document.createElement("span");
+    l.className = "popover-label";
+    l.textContent = label + ":";
+    var v = document.createElement("span");
+    v.className = "popover-value";
+    v.textContent = value;
+    row.appendChild(l);
+    row.appendChild(v);
+    container.appendChild(row);
+  }
+
+  function popoverFlag(container, cls, text) {
+    var flag = document.createElement("div");
+    flag.className = "popover-flag " + cls;
+    flag.textContent = text;
+    container.appendChild(flag);
+  }
+
+  function buildPopoverContent(nodeData, matchInfo) {
+    var el = document.createElement("div");
+
+    var title = document.createElement("div");
+    title.className = "popover-title";
+    title.textContent = nodeData.label;
+    el.appendChild(title);
+
+    if (matchInfo) {
+      popoverRow(el, "Module", matchInfo.module);
+      popoverRow(el, "Enclosed by", matchInfo.enclosedBy);
+      popoverRow(el, "Position", matchInfo.position);
+    }
+
+    if (nodeData.recoverable) {
+      popoverFlag(el, "recoverable", "Recoverable: this function's own recover() would catch a panic from what it calls next -- not a guarantee the whole path is panic-safe.");
+    }
+    if (nodeData.unconfirmed) {
+      popoverFlag(el, "unconfirmed", "Unconfirmed: this hop's import relationship could not be verified.");
+    }
+    if (nodeData.truncated || (matchInfo && matchInfo.pathLimited)) {
+      popoverFlag(el, "truncated", "Truncated: cut short by a node or filter limit -- there may be more of this path wally didn't search.");
+    }
+
+    if (nodeData.resolvedArgs && nodeData.resolvedArgs.length) {
+      var argsHeader = document.createElement("div");
+      argsHeader.className = "popover-row";
+      argsHeader.style.marginTop = "6px";
+      var argsLabel = document.createElement("span");
+      argsLabel.className = "popover-label";
+      argsLabel.textContent = "Resolved args:";
+      argsHeader.appendChild(argsLabel);
+      el.appendChild(argsHeader);
+
+      nodeData.resolvedArgs.forEach(function (a) {
+        popoverRow(el, a.name || "(arg)", a.value);
+      });
+    }
+
+    return el;
+  }
+
+  function showNodePopover(node) {
+    var d = node.data();
+    nodePopoverEl.innerHTML = "";
+    nodePopoverEl.appendChild(buildPopoverContent(d, matchInfoForNode(d)));
+
+    var pos = node.renderedPosition();
+    var bbox = node.renderedBoundingBox();
+    nodePopoverEl.style.left = (pos.x + bbox.w / 2 + 8) + "px";
+    nodePopoverEl.style.top = (pos.y - bbox.h / 2) + "px";
+    nodePopoverEl.classList.remove("hidden");
+  }
+
+  function hideNodePopover() {
+    nodePopoverEl.classList.add("hidden");
+  }
+
+  cy.on("mouseover", "node.target", function (evt) { showNodePopover(evt.target); });
+  cy.on("mouseout", "node.target", hideNodePopover);
+  cy.on("pan zoom drag", hideNodePopover);
+
   // applyQueryResponse renders a successful /api/query or /api/query-through
   // response -- shared so both endpoints paint the graph/paths/status
   // identically. noMatchMessage is what to show when matchCount is 0,
@@ -438,6 +551,9 @@
   // to sink" (a filtered query) need different wording for the same
   // underlying empty-result shape.
   function applyQueryResponse(data, rtt, noMatchMessage) {
+    lastPaths = data.paths || [];
+    lastMatches = data.matches || [];
+
     if (data.matchCount === 0) {
       setStatus(
         noMatchMessage + " (resolved in " + data.elapsedMs.toFixed(2) + "ms, round trip " + rtt + "ms)",
@@ -456,12 +572,11 @@
     renderPaths(data.paths);
   }
 
-  // runQuery is the shared query-submission path -- called from the form's
-  // own submit event, and also from the context menu's "Show graph for
-  // this function" action and the Functions tab (which fill the form
-  // fields and call this directly, rather than synthesizing a fake submit
-  // event).
-  function runQuery(body) {
+  // executeQuery is the actual /api/query fetch+render -- pure, no history
+  // side effects. Called both by runQuery (a fresh user-initiated query,
+  // which pushes history first) and by navigateHistory (replaying a past
+  // entry, which must NOT push a new one).
+  function executeQuery(body) {
     var mySeq = ++seq;
     if (currentAbort) currentAbort.abort();
     currentAbort = new AbortController();
@@ -498,6 +613,16 @@
       });
   }
 
+  // runQuery is the public "query this" entry point -- called from the
+  // form's own submit event, the context menu's "Show graph for this
+  // function" action, and the Functions tab. Pushes onto the back/forward
+  // history (truncating any forward entries first, like browser
+  // navigation) before running.
+  function runQuery(body) {
+    pushHistory({ type: "query", body: body });
+    executeQuery(body);
+  }
+
   // queryFunction fills the query form for (pkg, function, recvType) and
   // runs it -- the shared "go query this specific function" action behind
   // both the context menu's "Show graph for this function" and a Functions
@@ -510,10 +635,10 @@
     runQuery(buildRequestBody());
   }
 
-  // queryThrough answers "does any path to this sink pass through that
-  // source" via /api/query-through -- the context menu's "Find path from
-  // source here" action.
-  function queryThrough(sinkBody, source) {
+  // executeQueryThrough is the actual /api/query-through fetch+render --
+  // pure, no history side effects (see executeQuery's own doc comment for
+  // why this split exists).
+  function executeQueryThrough(sinkBody, source) {
     var mySeq = ++seq;
     if (currentAbort) currentAbort.abort();
     currentAbort = new AbortController();
@@ -551,6 +676,49 @@
         setStatus("request failed: " + err.message, "error");
       });
   }
+
+  // queryThrough is the public "find this path" entry point -- the context
+  // menu's "Find path from source here" action. Pushes history the same
+  // way runQuery does.
+  function queryThrough(sinkBody, source) {
+    pushHistory({ type: "query-through", sinkBody: sinkBody, source: source });
+    executeQueryThrough(sinkBody, source);
+  }
+
+  // ---- Back/forward history over queried functions ------------------------
+  // pushHistory truncates any forward entries (like a browser: navigating
+  // back then running a new query discards the old "forward" branch)
+  // before appending. navigateHistory replays a past entry via the
+  // internal execute* functions directly, so replaying never itself grows
+  // the history.
+  function pushHistory(entry) {
+    queryHistory = queryHistory.slice(0, historyIndex + 1);
+    queryHistory.push(entry);
+    historyIndex = queryHistory.length - 1;
+    updateHistoryButtons();
+  }
+
+  function navigateHistory(delta) {
+    var newIndex = historyIndex + delta;
+    if (newIndex < 0 || newIndex >= queryHistory.length) return;
+    historyIndex = newIndex;
+    updateHistoryButtons();
+
+    var entry = queryHistory[historyIndex];
+    if (entry.type === "query") {
+      executeQuery(entry.body);
+    } else if (entry.type === "query-through") {
+      executeQueryThrough(entry.sinkBody, entry.source);
+    }
+  }
+
+  function updateHistoryButtons() {
+    historyBackEl.disabled = historyIndex <= 0;
+    historyForwardEl.disabled = historyIndex >= queryHistory.length - 1;
+  }
+
+  historyBackEl.addEventListener("click", function () { navigateHistory(-1); });
+  historyForwardEl.addEventListener("click", function () { navigateHistory(1); });
 
   form.addEventListener("submit", function (evt) {
     evt.preventDefault();

@@ -42,6 +42,13 @@ html, body {
   flex-shrink: 0;
 }
 
+/* Brighter red than .muted.error's #c53030 -- that one is tuned for the
+   light sidebar, this pane's background is dark. */
+#code-header.error {
+  color: #f87171;
+  font-weight: bold;
+}
+
 #code-scroll {
   flex: 1;
   overflow: auto;
@@ -85,6 +92,29 @@ html, body {
 h1 {
   font-size: 18px;
   margin: 0;
+}
+
+#history-nav {
+  display: flex;
+  gap: 4px;
+}
+
+#history-nav button {
+  padding: 2px 10px;
+  font-size: 14px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+#history-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#history-nav button:not(:disabled):hover {
+  background: #f7fafc;
 }
 
 .muted {
@@ -281,6 +311,53 @@ h1 {
 #context-menu button:hover {
   background: #edf2f7;
 }
+
+#node-popover {
+  position: absolute;
+  z-index: 900;
+  max-width: 340px;
+  background: white;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 8px 10px;
+  font-size: 12px;
+  pointer-events: none; /* a hover popover shouldn't itself be hoverable/clickable */
+}
+
+#node-popover .popover-title {
+  font-weight: bold;
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+
+#node-popover .popover-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+#node-popover .popover-row .popover-label {
+  color: #718096;
+  flex-shrink: 0;
+}
+
+#node-popover .popover-row .popover-value {
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+
+#node-popover .popover-flag {
+  margin-top: 4px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+#node-popover .popover-flag.recoverable { background: #dcfce7; color: #15803d; }
+#node-popover .popover-flag.unconfirmed { background: #fef9c3; color: #a16207; }
+#node-popover .popover-flag.truncated { background: #e5e7eb; color: #4b5563; }
 
 #function-search {
   padding: 4px 6px;

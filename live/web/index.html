@@ -19,6 +19,10 @@
 <div id="app">
   <div id="left">
     <h1>wally live</h1>
+    <div id="history-nav">
+      <button type="button" id="history-back" disabled title="Back to the previously viewed function">‹</button>
+      <button type="button" id="history-forward" disabled title="Forward">›</button>
+    </div>
     <div id="info" class="muted">connecting…</div>
     <div id="path-source" class="muted hidden">
       Path source: <span id="path-source-label"></span>
@@ -61,11 +65,11 @@
       <div id="status" class="muted">Enter a package and function, then Query.</div>
 
       <div id="legend">
-        <span class="chip target">target</span>
-        <span class="chip unconfirmed">unconfirmed</span>
-        <span class="chip no-import">no import path</span>
-        <span class="chip recoverable">recoverable</span>
-        <span class="chip truncated">truncated</span>
+        <span class="chip target" title="The function this query searched for.">target</span>
+        <span class="chip unconfirmed" title="This hop's caller package doesn't directly import the callee's package -- a plausible callgraph edge (e.g. through a widely-implemented interface) that couldn't be independently verified.">unconfirmed</span>
+        <span class="chip no-import" title="Not even the direct call into the target holds up -- a strong signal this path is a callgraph over-approximation artifact, not a real relationship.">no import path</span>
+        <span class="chip recoverable" title="This specific frame's own function has a local recover() that would catch a panic from what it calls next -- not a guarantee the whole path is panic-safe.">recoverable</span>
+        <span class="chip truncated" title="This path was cut short by a node or filter limit -- there may be more of it wally didn't search.">truncated</span>
       </div>
 
       <div id="paths"></div>
@@ -90,6 +94,7 @@
   </div>
   <div id="right">
     <div id="cy"></div>
+    <div id="node-popover" class="hidden"></div>
   </div>
 </div>
 <div id="context-menu" class="hidden">
