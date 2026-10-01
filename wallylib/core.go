@@ -399,11 +399,39 @@ func IsClosure(function *ssa.Function) bool {
 // generates for a bound method value (e.g. `f := obj.Method`). These wrappers
 // have no lexical parent and no *ssa.Package (Func.Package() is nil), so they
 // look like closures (their name contains "$") but must not be treated as one:
-// walking Parent() on them panics. They also lack a source position, so
-// callers must fall back to the call site's position instead of the
-// function's own position.
+// walking Parent() on them panics. Func.Pos() is still valid, though --
+// confirmed it resolves to the wrapped method's own real declaration site
+// (e.g. (*os.File).Read$bound's Pos() resolves to Read's own declaration
+// line) -- so a caller doesn't strictly need the call site's position
+// instead, just a fallback for when one isn't available (see
+// GetFormattedPosFromFunc, which already does exactly that).
 func IsBoundFunc(function *ssa.Function) bool {
 	return strings.HasSuffix(function.Name(), "$bound")
+}
+
+// BoundFuncReceiverTypeName returns the bare name of the type a $bound
+// wrapper's underlying method was bound on (e.g. "File" for
+// (*os.File).Read$bound), for display in place of a package name -- a
+// $bound wrapper's own Func.Package() is nil, so callers formatting it as
+// "pkg.[Func] pos" have nothing else to put there. SSA represents the bound
+// receiver as the wrapper's first free variable (that's the whole mechanism
+// a bound method value uses: the receiver is captured, the resulting func
+// value's own signature has none), so this is read from there rather than
+// from anything requiring the missing package/type info directly. Returns
+// "" if function isn't a bound func, or its receiver type can't be
+// determined (should not happen for a real $bound wrapper).
+func BoundFuncReceiverTypeName(function *ssa.Function) string {
+	if !IsBoundFunc(function) || len(function.FreeVars) == 0 {
+		return ""
+	}
+	t := function.FreeVars[0].Type()
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	if named, ok := t.(*types.Named); ok {
+		return named.Obj().Name()
+	}
+	return ""
 }
 
 func getModuleName(pkg *packages.Package) (string, error) {

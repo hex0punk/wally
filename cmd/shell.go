@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/hex0punk/wally/indicator"
 	"github.com/hex0punk/wally/navigator"
-	"github.com/hex0punk/wally/wallylib/callmapper"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v2"
@@ -39,10 +38,7 @@ builds it once, keeps it resident in memory, and then lets you run many
 "map search"-style queries against it interactively, without paying the
 callgraph-construction cost again for each one.`,
 	Args: func(cmd *cobra.Command, args []string) error {
-		if shellCallgraphAlg != "rta" && shellCallgraphAlg != "cha" && shellCallgraphAlg != "vta" && shellCallgraphAlg != "static" {
-			return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s", shellCallgraphAlg)
-		}
-		return nil
+		return validateCallgraphAlg(shellCallgraphAlg)
 	},
 	Run: runShell,
 }
@@ -74,7 +70,7 @@ func runShell(cmd *cobra.Command, args []string) {
 		PosSuffixes: shellExcludePos,
 	}
 
-	buildNav(nav)
+	buildNav(nav, shellPaths)
 
 	fmt.Println()
 	fmt.Println("wally interactive shell. The callgraph above was built once; each query below only re-walks it.")
@@ -85,11 +81,26 @@ func runShell(cmd *cobra.Command, args []string) {
 	runShellLoop(nav)
 }
 
-func buildNav(nav *navigator.Navigator) {
+// validateCallgraphAlg is shared by wally shell and wally live -- both
+// expose the same --callgraph-alg session flag.
+func validateCallgraphAlg(alg string) error {
+	if alg != "rta" && alg != "cha" && alg != "vta" && alg != "static" {
+		return fmt.Errorf("callgraph agorithm should be either cha, rta, or vta, got %s", alg)
+	}
+	return nil
+}
+
+// buildNav builds nav's SSA/callgraph once from paths -- shared by wally
+// shell (session build + reload) and wally live, so both commands build the
+// same way -- and returns how long it took, so a caller like wally live can
+// report it without timing the same build a second time itself.
+func buildNav(nav *navigator.Navigator, paths []string) time.Duration {
 	start := time.Now()
-	nav.Logger.Info("Building SSA callgraph", "paths", shellPaths, "alg", nav.CallgraphAlg)
-	nav.Build(shellPaths)
-	fmt.Printf("Callgraph built in %s\n", time.Since(start))
+	nav.Logger.Info("Building SSA callgraph", "paths", paths, "alg", nav.CallgraphAlg)
+	nav.Build(paths)
+	elapsed := time.Since(start)
+	fmt.Printf("Callgraph built in %s\n", elapsed)
+	return elapsed
 }
 
 func runShellLoop(nav *navigator.Navigator) {
@@ -118,7 +129,7 @@ func runShellLoop(nav *navigator.Navigator) {
 			printShellHelp()
 			continue
 		case "reload":
-			buildNav(nav)
+			buildNav(nav, shellPaths)
 			continue
 		}
 
@@ -205,36 +216,27 @@ func runShellQuery(nav *navigator.Navigator, tokens []string) {
 
 	start := time.Now()
 
-	nav.RouteIndicators = indicator.InitIndicators(
-		[]indicator.Indicator{
-			{
-				Package:      qPkg,
-				Function:     qFunc,
-				ReceiverType: qRecvType,
-				MatchFilters: qMatchFilters,
-			},
-		}, true,
-	)
-	nav.RouteMatches = nil
-	nav.FindMatches()
-
-	if len(nav.RouteMatches) == 0 {
-		fmt.Printf("No matches found for func %s in package %s (resolved in %s)\n", qFunc, qPkg, time.Since(start))
-		return
-	}
-
-	mapperOptions := callmapper.Options{
+	q := navigator.QueryParams{
+		Pkg:          qPkg,
+		Func:         qFunc,
+		RecvType:     qRecvType,
+		MatchFilters: qMatchFilters,
 		Filter:       qFilter,
+		LimiterMode:  qLimiterMode,
+		SearchAlg:    qSearchAlg,
 		MaxFuncs:     qMaxFuncs,
 		MaxPaths:     qMaxPaths,
 		PrintNodes:   qPrintNodes,
-		Limiter:      callmapper.LimiterMode(qLimiterMode),
-		SearchAlg:    callmapper.SearchAlgs[qSearchAlg],
-		SkipClosures: qSkipClosures,
 		ModuleOnly:   qModuleOnly,
+		SkipClosures: qSkipClosures,
 		Simplify:     qSimplify,
 	}
-	nav.SolveCallPaths(mapperOptions)
+	matches := nav.Query(q)
+
+	if len(matches) == 0 {
+		fmt.Printf("No matches found for func %s in package %s (resolved in %s)\n", qFunc, qPkg, time.Since(start))
+		return
+	}
 
 	nav.PrintResults(qFormat, qOut)
 	fmt.Printf("(resolved in %s against the already-built callgraph)\n", time.Since(start))

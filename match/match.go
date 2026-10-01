@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/hex0punk/wally/indicator"
+	"github.com/hex0punk/wally/wallylib"
 	"github.com/hex0punk/wally/wallynode"
 	"go/token"
 	"go/types"
@@ -12,14 +13,19 @@ import (
 )
 
 type RouteMatch struct {
-	MatchId    string
-	Indicator  indicator.Indicator // It should be FuncInfo instead
-	Params     map[string]string
-	Pos        token.Position
-	Signature  *types.Signature
-	EnclosedBy string
-	Module     string
-	SSA        *SSAContext
+	MatchId   string
+	Indicator indicator.Indicator // It should be FuncInfo instead
+	Params    map[string]string
+	// ResolvedArgs is every positional argument of this match's own call
+	// site that Navigator.Run could resolve a compile-time value for (see
+	// wallylib.ResolveAllArgs) -- nil for a bare func-value match
+	// (matchFuncValueRef), which has no call site to resolve args from.
+	ResolvedArgs []wallylib.ResolvedArg
+	Pos          token.Position
+	Signature    *types.Signature
+	EnclosedBy   string
+	Module       string
+	SSA          *SSAContext
 }
 
 // TODO: I don't love this here, maybe an SSA dedicated pkg would be better
@@ -70,6 +76,29 @@ type CallPath struct {
 	// from a genuine ConfirmedDepth of 0 using VerificationAttempted.
 	ConfirmedDepth        int
 	VerificationAttempted bool
+}
+
+// FrameUnconfirmed reports whether the frame at index x (innermost-first,
+// same indexing as Nodes) falls outside the confirmed-import prefix -- the
+// same test both the plain-text reporter's "[unconfirmed]" marker and any
+// other presentation of a path should use, so they can't drift apart.
+func (cp *CallPath) FrameUnconfirmed(x int) bool {
+	return cp.VerificationAttempted && x >= cp.ConfirmedDepth
+}
+
+// UnconfirmedCount is how many outer frames fall outside the confirmed
+// prefix -- 0 when the whole path is confirmed or verification wasn't
+// attempted.
+func (cp *CallPath) UnconfirmedCount() int {
+	return len(cp.Nodes) - cp.ConfirmedDepth
+}
+
+// NoImportPathFound reports whether even the innermost hop -- the call
+// directly into the matched target -- failed to confirm, the strongest
+// signal that the whole path is a callgraph over-approximation artifact
+// rather than a real relationship.
+func (cp *CallPath) NoImportPathFound() bool {
+	return cp.VerificationAttempted && cp.ConfirmedDepth == 0 && len(cp.Nodes) > 0
 }
 
 func (cp *CallPaths) InsertPaths(nodes []wallynode.WallyNode, nodeLimited bool, filterLimited bool, simplify bool) {

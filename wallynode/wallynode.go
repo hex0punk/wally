@@ -3,6 +3,8 @@ package wallynode
 import (
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/hex0punk/wally/wallylib"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
@@ -13,6 +15,22 @@ type WallyNode struct {
 	Caller      *callgraph.Node
 	Site        ssa.CallInstruction
 	recoverable bool
+}
+
+// RecoverableMarker is the literal substring GetNodeString bakes into a
+// node's string form when it's recoverable. Some node strings (e.g. the
+// match target leaf built directly by callmapper, not through this
+// package) never populate WallyNode.recoverable at all -- HasRecoverableMarker
+// is the only signal that reliably survives that path, which is why the CLI
+// and any other presentation of a path should use it instead of
+// IsRecoverable() when working from a node's string form.
+const RecoverableMarker = "(recoverable)"
+
+// HasRecoverableMarker reports whether s (a WallyNode.NodeString, or any
+// other position string built via GetNodeString) carries the recoverable
+// marker.
+func HasRecoverableMarker(s string) bool {
+	return strings.Contains(s, RecoverableMarker)
 }
 
 type NodeType int
@@ -31,11 +49,13 @@ func GetNodeString(basePos string, s *callgraph.Node, recoverable bool) string {
 	pkgName := ""
 	if pkg := function.Package(); pkg != nil {
 		pkgName = pkg.Pkg.Name()
+	} else {
+		pkgName = wallylib.BoundFuncReceiverTypeName(function)
 	}
 	baseStr := fmt.Sprintf("%s.[%s] %s", pkgName, function.Name(), basePos)
 
 	if recoverable {
-		return fmt.Sprintf("%s.[%s] (recoverable) %s", pkgName, function.Name(), basePos)
+		return fmt.Sprintf("%s.[%s] %s %s", pkgName, function.Name(), RecoverableMarker, basePos)
 	}
 
 	return baseStr

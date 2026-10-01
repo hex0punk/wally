@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>wally live</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css" />
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script>window.Prism = { manual: true };</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <h1>wally live</h1>
+    <div id="history-nav">
+      <button type="button" id="history-back" disabled title="Back to the previously viewed function">‹</button>
+      <button type="button" id="history-forward" disabled title="Forward">›</button>
+    </div>
+    <div id="info" class="muted">connecting…</div>
+    <div id="path-source" class="muted hidden">
+      Path source: <span id="path-source-label"></span>
+      <button type="button" id="path-source-clear">✕</button>
+    </div>
+
+    <div id="tabs">
+      <button type="button" class="tab-btn active" data-tab="query">Query</button>
+      <button type="button" class="tab-btn" data-tab="files">Files</button>
+      <button type="button" class="tab-btn" data-tab="functions">Functions</button>
+    </div>
+
+    <div id="tab-query" class="tab-pane active">
+      <form id="query-form">
+        <label>Package<input type="text" id="q-pkg" name="pkg" placeholder="e.g. net/http" required /></label>
+        <label>Function<input type="text" id="q-func" name="func" placeholder="e.g. Get" required /></label>
+        <label>Receiver type<input type="text" id="q-recv-type" name="recv-type" placeholder="optional" /></label>
+
+        <details>
+          <summary>Advanced</summary>
+          <label>Match filter(s), comma separated<input type="text" id="q-match-filter" name="match-filter" /></label>
+          <label>Path filter (-f)<input type="text" id="q-filter" name="filter" /></label>
+          <label>Search algorithm
+            <select id="q-search-alg" name="search-alg">
+              <option value="bfs" selected>bfs</option>
+              <option value="dfs">dfs</option>
+            </select>
+          </label>
+          <label>Limiter mode (0-4)<input type="number" id="q-limiter-mode" name="limiter-mode" min="0" max="4" value="4" /></label>
+          <label>Max paths<input type="number" id="q-max-paths" name="max-paths" min="0" value="0" /></label>
+          <label>Max funcs<input type="number" id="q-max-funcs" name="max-funcs" min="0" value="0" /></label>
+          <label><input type="checkbox" id="q-module-only" name="module-only" checked /> Module only</label>
+          <label><input type="checkbox" id="q-skip-closures" name="skip-closures" /> Skip closures</label>
+          <label><input type="checkbox" id="q-simple" name="simple" /> Simple (signatures, not sites)</label>
+        </details>
+
+        <button type="submit">Query</button>
+      </form>
+
+      <div id="status" class="muted">Enter a package and function, then Query.</div>
+
+      <div id="legend">
+        <span class="chip target" title="The function this query searched for.">target</span>
+        <span class="chip unconfirmed" title="This hop's caller package doesn't directly import the callee's package -- a plausible callgraph edge (e.g. through a widely-implemented interface) that couldn't be independently verified.">unconfirmed</span>
+        <span class="chip no-import" title="Not even the direct call into the target holds up -- a strong signal this path is a callgraph over-approximation artifact, not a real relationship.">no import path</span>
+        <span class="chip recoverable" title="This specific frame's own function has a local recover() that would catch a panic from what it calls next -- not a guarantee the whole path is panic-safe.">recoverable</span>
+        <span class="chip truncated" title="This path was cut short by a node or filter limit -- there may be more of it wally didn't search.">truncated</span>
+      </div>
+
+      <div id="paths"></div>
+      <div id="details"></div>
+    </div>
+
+    <div id="tab-files" class="tab-pane">
+      <input type="text" id="file-filter" placeholder="Filter files…" />
+      <ul id="file-list"></ul>
+    </div>
+
+    <div id="tab-functions" class="tab-pane">
+      <input type="text" id="function-search" placeholder="Search functions… (2+ chars)" />
+      <div id="package-filter">
+        <button type="button" id="package-filter-toggle">Packages: All</button>
+        <div id="package-filter-panel" class="hidden">
+          <input type="text" id="package-filter-search" placeholder="Filter packages…" />
+          <div id="package-filter-actions">
+            <button type="button" id="package-filter-select-all">Select all</button>
+            <button type="button" id="package-filter-clear">Clear (no filter)</button>
+          </div>
+          <ul id="package-filter-list"></ul>
+        </div>
+      </div>
+      <ul id="function-list"></ul>
+    </div>
+  </div>
+  <div id="code">
+    <div id="code-header" class="muted">Click a node to view its source.</div>
+    <div id="code-scroll">
+      <pre id="code-pre" class="line-numbers"><code id="code-content" class="language-go"></code></pre>
+    </div>
+  </div>
+  <div id="right">
+    <div id="cy"></div>
+    <div id="node-popover" class="hidden"></div>
+  </div>
+</div>
+<div id="context-menu" class="hidden">
+  <button type="button" id="context-menu-show-graph">Show graph for this function</button>
+  <button type="button" id="context-menu-set-source">Set as path source</button>
+  <button type="button" id="context-menu-find-path" class="hidden">Find path from source here</button>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hex0punk/wally/match"
+	"github.com/hex0punk/wally/wallynode"
 	"github.com/pterm/pterm"
 	"golang.org/x/term"
 )
@@ -123,13 +124,12 @@ func pathHeader(index int, p *match.CallPath) string {
 		b.WriteString(pterm.FgGreen.Sprint(" (RECOVERABLE)"))
 	}
 
-	unconfirmedCount := len(p.Nodes) - p.ConfirmedDepth
 	switch {
-	case p.VerificationAttempted && p.ConfirmedDepth == 0 && len(p.Nodes) > 0:
+	case p.NoImportPathFound():
 		warning := " (!! NO IMPORT PATH FOUND for even the call into the target -- likely a cha/vta false positive from a widely-implemented interface, verify against source before trusting this !!)"
 		b.WriteString(pterm.NewStyle(pterm.FgRed, pterm.Bold).Sprint(warning))
-	case p.VerificationAttempted && unconfirmedCount > 0:
-		warning := fmt.Sprintf(" (%d outer frame(s) beyond the [unconfirmed] marker below have no direct import to what they supposedly call -- likely generic/shared framework code a cha/vta over-approximation attached, not necessarily fake, but not confirmed either)", unconfirmedCount)
+	case p.VerificationAttempted && p.UnconfirmedCount() > 0:
+		warning := fmt.Sprintf(" (%d outer frame(s) beyond the [unconfirmed] marker below have no direct import to what they supposedly call -- likely generic/shared framework code a cha/vta over-approximation attached, not necessarily fake, but not confirmed either)", p.UnconfirmedCount())
 		b.WriteString(pterm.FgYellow.Sprint(warning))
 	}
 
@@ -146,9 +146,8 @@ func buildPathTree(p *match.CallPath, targetPos string) pterm.TreeNode {
 	node := pterm.TreeNode{Text: pterm.NewStyle(pterm.FgCyan, pterm.Bold).Sprint(targetPos)}
 
 	for x := 0; x < len(p.Nodes); x++ {
-		unconfirmed := p.VerificationAttempted && x >= p.ConfirmedDepth
 		node = pterm.TreeNode{
-			Text:     styleNodeText(p.Nodes[x].NodeString, unconfirmed),
+			Text:     styleNodeText(p.Nodes[x].NodeString, p.FrameUnconfirmed(x)),
 			Children: []pterm.TreeNode{node},
 		}
 	}
@@ -157,7 +156,9 @@ func buildPathTree(p *match.CallPath, targetPos string) pterm.TreeNode {
 }
 
 func styleNodeText(nodeString string, unconfirmed bool) string {
-	nodeString = strings.ReplaceAll(nodeString, "(recoverable)", pterm.FgGreen.Sprint("(recoverable)"))
+	if wallynode.HasRecoverableMarker(nodeString) {
+		nodeString = strings.ReplaceAll(nodeString, wallynode.RecoverableMarker, pterm.FgGreen.Sprint(wallynode.RecoverableMarker))
+	}
 	if unconfirmed {
 		return pterm.FgYellow.Sprint("[unconfirmed] ") + nodeString
 	}

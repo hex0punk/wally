@@ -334,6 +334,80 @@ Two extra shell-only commands:
 - `reload`: rebuilds the callgraph from disk using the same session-level flags you started with — use this after editing source, not to add new paths (for that, start a new `wally shell` with a wider `--paths`).
 - `exit` / `quit`: leave the shell.
 
+## Live graph UI (`wally live`)
+
+Same resident-callgraph model as `wally shell` — build the SSA/callgraph
+once, then answer queries in milliseconds — but instead of a stdin prompt,
+`wally live` serves an HTTP API and a small embedded web UI that renders
+each query's call paths as a [Cytoscape.js](https://js.cytoscape.org/) graph,
+plus a source viewer and file/function browser, instead of the CLI's text
+tree:
+
+```bash
+$ wally live --paths ./...
+Callgraph built in 722ms
+wally live UI: http://127.0.0.1:1985
+```
+
+Open that URL, type a package and function (optionally a receiver type,
+same interface-satisfaction resolution `--recv-type` gets elsewhere), and
+the matching call paths render live — no more building a new callgraph per
+query, and no more reading arrow chains by hand for anything with more than
+a couple of hops. Unconfirmed frames, `RECOVERABLE` paths, and `NO IMPORT
+PATH FOUND` warnings use the same palette as the CLI's colored output
+(yellow/green/red respectively), so the two views read consistently. Hover
+any legend chip, or the sink (target) node in the graph itself, for a plain-
+language explanation of what that signal actually means — "recoverable," in
+particular, only marks the one frame whose own function has a local
+`recover()` that would catch a panic from what it calls next, not a
+guarantee the whole path is panic-safe.
+
+### Browsing and jumping to code
+
+Click any node in the graph to load its source, syntax-highlighted, with the
+matching line highlighted. For the query's own target (sink) call site,
+every argument wally could resolve to a compile-time constant — not just
+ones a config file names, every positional argument, generically — is
+outlined directly in the code with a hover tooltip showing its resolved
+value.
+
+Two tabs alongside the query form:
+
+- **Files** — every first-party file wally's analysis touched, filterable
+  by substring; click to load it into the code viewer with no line
+  highlighted.
+- **Functions** — search by name across the whole codebase (server-side,
+  debounced, since a large codebase can have far more functions than makes
+  sense to ship to the browser up front); click a result to query it and
+  jump the code viewer straight to its declaration.
+
+Right-click any line in the code viewer to resolve its enclosing function
+and either:
+
+- **"Show graph for this function"** — run the same query you'd get from
+  typing it into the form.
+- **"Set as path source"**, then later right-click a potential sink and
+  **"Find path from source here"** — answers "does any path to this sink
+  pass through that source function at some point," as a filter over the
+  paths already found for the sink (no new search, just narrowing).
+
+Every function you've queried — via the form, a Functions-tab search, a
+right-click, or a source→sink sink — is kept in a back/forward history,
+browser-style, with buttons next to the header.
+
+Session-level flags are the same as `wally shell`'s (`--paths`/`-p`,
+`--callgraph-alg`, `--exclude-pkg`, `--exclude-pos`, `--no-auto-deps`), plus:
+
+- `--host` (default `127.0.0.1`): binds to localhost only by default — this
+  serves source file paths and code positions, so don't bind it to a public
+  interface.
+- `--port` / `-P` (default `1985`): distinct from `wally server`'s default
+  `1984`, so both can run side by side.
+
+`wally live` doesn't take `--config`/`--skip-default` — every query already
+replaces the active indicator set wholesale, so a preloaded config file
+wouldn't survive the first query anyway.
+
 ## Using Wally in Fuzzing Efforts to Determine Fault Tolerance of Call Paths
 
 Wally can now tell you which paths to a target function will recover in case of a panic triggered by that target function. A detailed explanation can be found [here](https://hex0punk.com/posts/fault-tolerance-detection-with-wally/).

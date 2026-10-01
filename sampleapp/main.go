@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/hex0punk/wally/sampleapp/bound"
 	"github.com/hex0punk/wally/sampleapp/caller"
 	"github.com/hex0punk/wally/sampleapp/printer"
@@ -67,3 +69,12 @@ func printChar(word string, idx int) {
 	ThisIsACall("HOOOOLA")
 	//printer.PrintOrPanic(word, idx)
 }
+
+// packageLevelCall exists to exercise a call site with no enclosing
+// function at all -- a package-level var initializer, evaluated before
+// main() ever runs, rather than one inside any func body -- calling a
+// standard-library function specifically, since Go's toolchain never
+// attaches module info to stdlib packages (see Navigator.GetModuleName's
+// own doc comment); the combination of both is what a query for
+// strconv.Itoa walks straight into.
+var packageLevelCall = strconv.Itoa(42)
