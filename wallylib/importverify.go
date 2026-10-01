@@ -1,6 +1,10 @@
 package wallylib
 
-import "golang.org/x/tools/go/packages"
+import (
+	"go/types"
+
+	"golang.org/x/tools/go/packages"
+)
 
 // PackageIndex is a flattened, by-path lookup over a package import graph,
 // built once (see NewPackageIndex) and queried cheaply many times -- e.g.
@@ -64,4 +68,26 @@ func (idx *PackageIndex) DirectlyImports(fromPath, toPath string) bool {
 		}
 	}
 	return false
+}
+
+// ResolveNamedType looks up a package-scope type declaration by its
+// package path and unqualified name (e.g. "some/pkg", "SomeType"),
+// returning its types.Type. Returns nil if the package isn't in this
+// index, or the package declares no such name, or the name isn't a type
+// -- any of which fail-open the same way DirectlyImports does, since this
+// is a best-effort lookup over an already-loaded program, not a guarantee
+// the target actually exists as specified.
+func (idx *PackageIndex) ResolveNamedType(pkgPath, typeName string) types.Type {
+	pkg, ok := idx.byPath[pkgPath]
+	if !ok || pkg.Types == nil {
+		return nil
+	}
+	obj := pkg.Types.Scope().Lookup(typeName)
+	if obj == nil {
+		return nil
+	}
+	if _, ok := obj.(*types.TypeName); !ok {
+		return nil
+	}
+	return obj.Type()
 }

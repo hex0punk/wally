@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"github.com/hex0punk/wally/sampleapp/bound"
+	"github.com/hex0punk/wally/sampleapp/caller"
 	"github.com/hex0punk/wally/sampleapp/printer"
 	"github.com/hex0punk/wally/sampleapp/safe"
+	"github.com/hex0punk/wally/sampleapp/target"
 )
 
 func main() {
@@ -16,6 +18,7 @@ func main() {
 	ra := RunAll
 	ra(word, idx)
 	RunBound()
+	RunCrossInterface()
 }
 
 // RunBound exercises a bound method value: h.Handle is not called directly,
@@ -28,6 +31,19 @@ func RunBound() {
 
 func Dispatch(f func(string), msg string) {
 	f(msg)
+}
+
+// RunCrossInterface exercises a call dispatched through an interface
+// declared in a different package than the concrete type actually
+// implementing it: c is a *target.Client, but caller.RunWithWorker's own
+// parameter type is caller.Worker, declared in caller's own package with
+// no reference to target at all. A search for target.Client.DoWork by
+// exact receiver-type string can't see this call; it needs interface
+// satisfaction (does target.Client implement whatever interface the call
+// site's own receiver type actually is), not string equality.
+func RunCrossInterface() {
+	c := &target.Client{}
+	caller.RunWithWorker(c, 1)
 }
 
 func RunAll(str string, idx int) {

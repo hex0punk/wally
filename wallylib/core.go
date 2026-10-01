@@ -38,23 +38,39 @@ type SSAContext struct {
 	CallPaths      [][]string
 }
 
-func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator {
+// Match checks fi against each indicator, returning the first one that
+// matches (nil if none do). idx, if non-nil, is used to resolve interface
+// satisfaction for indicators that specify a ReceiverType -- see
+// matchReceiver for why this matters and pkgIndex.go for what it costs to
+// build. Passing nil idx preserves the exact-match-only behavior from
+// before that resolution existed (still correct, just less capable for
+// the interface-satisfied-by-a-type-in-a-different-package case).
+func (fi *FuncInfo) Match(indicators []indicator.Indicator, idx *PackageIndex) *indicator.Indicator {
 	var match *indicator.Indicator
 
 	for _, ind := range indicators {
 		ind := ind
 
-		// User may decide they do not care if the package matches.
-		// It'd be worth adding a command to "take a guess" for potential routes
-		if fi.Package != ind.Package && ind.Package != "*" {
-			continue
-		}
 		if fi.Name != ind.Function {
 			continue
 		}
 
 		if ind.ReceiverType != "" {
-			if !fi.matchReceiver(ind.Package, ind.ReceiverType) {
+			// matchReceiver checks receiver identity/satisfaction against
+			// (ind.Package, ind.ReceiverType) directly -- a package-equality
+			// check here would incorrectly reject a call dispatched through
+			// an interface declared in a different package than the
+			// concrete type the caller actually cares about (the case
+			// matchReceiver's interface-satisfaction fallback exists for),
+			// so it's intentionally skipped in this branch.
+			if !fi.matchReceiver(ind.Package, ind.ReceiverType, idx) {
+				continue
+			}
+		} else {
+			// No ReceiverType given: package equality is the only signal
+			// available, so keep requiring it -- this is the plain
+			// --func/--pkg case with no receiver, unaffected by the above.
+			if fi.Package != ind.Package && ind.Package != "*" {
 				continue
 			}
 		}
@@ -79,18 +95,50 @@ func (fi *FuncInfo) Match(indicators []indicator.Indicator) *indicator.Indicator
 	return match
 }
 
-func (fi *FuncInfo) matchReceiver(pkg, recvType string) bool {
+// matchReceiver reports whether fi's call-site receiver type matches
+// (pkg, recvType) -- either exactly (the original, still-primary check),
+// or, failing that, via interface satisfaction if idx is available.
+//
+// The exact-match check alone misses a real, common shape: a call
+// dispatched through an interface declared in a completely different
+// package than the concrete type the caller is asking about (a
+// caller-local interface satisfied by, but never referencing, a target's
+// own type). fi.Signature.Recv().Type() in that case is the *caller's*
+// interface -- its own package and name have no relationship to (pkg,
+// recvType) at all, even though the concrete type the caller actually
+// dispatches to at runtime does implement it. This can't be detected by
+// string comparison; it needs an actual types.Implements check against
+// the resolved (pkg, recvType) type, which only works if idx was built
+// from a program that has that type loaded (idx == nil, e.g. no --ssa,
+// falls back to exact-match-only).
+func (fi *FuncInfo) matchReceiver(pkg, recvType string, idx *PackageIndex) bool {
 	if fi.Signature == nil || fi.Signature.Recv() == nil {
 		return false
 	}
 
+	recvT := fi.Signature.Recv().Type()
 	recString := fmt.Sprintf("%s.%s", pkg, recvType)
-	funcRecv := fi.Signature.Recv().Type().String()
+	funcRecv := recvT.String()
 
 	if recString == funcRecv || fmt.Sprintf("*%s", recString) == funcRecv {
 		return true
 	}
-	return false
+
+	if idx == nil {
+		return false
+	}
+	iface, ok := recvT.Underlying().(*types.Interface)
+	if !ok {
+		// The call site's own receiver isn't an interface -- there's no
+		// satisfaction question to ask, the exact-match check above was
+		// already the right (and only) test, and it already failed.
+		return false
+	}
+	target := idx.ResolveNamedType(pkg, recvType)
+	if target == nil {
+		return false
+	}
+	return types.Implements(target, iface) || types.Implements(types.NewPointer(target), iface)
 }
 
 func GetFuncInfo(expr ast.Expr, info *types.Info) (*FuncInfo, error) {

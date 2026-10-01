@@ -297,6 +297,42 @@ The options above map to the following
 - `--pkg github.com/hashicorp/cronexpr`: Of package `github.com/hashicorp/cronexpr`
 - `-vvv`: Very, very verbose
 - `-f github.com/hashicorp/`: This tells Wally that we are only interested in paths within packages that start with `github.com/hashicorp/`. This avoids getting paths that reach beyond the scope we are interested in. Otherwise, we'd get nodes in standard Go libraries, etc. **Note:** this is optional, as by default wally will filter packages by the module string of each function match.
+- `--recv-type <Type>`: Restrict matches to a specific receiver type (e.g. `--recv-type Client` alongside `--pkg`/`--func` for a method). When `--ssa` (or `wally shell`, which always builds SSA) is in play, this also resolves **interface satisfaction**: a call site whose static type is an interface declared in a completely different package than your target's concrete type will still match, as long as that concrete type actually implements the interface. Without `--ssa`, it falls back to an exact type-string match only.
+
+## Using the interactive shell
+
+Building the SSA-based callgraph is the slow part of Wally — for a single query via `wally map search`, you pay that cost every time. `wally shell` builds it **once**, keeps it resident in memory, and then answers as many `map search`-style queries against it as you want, each in milliseconds:
+
+```bash
+$ wally shell --paths ./...
+```
+
+```
+wally interactive shell. The callgraph above was built once; each query below only re-walks it.
+Type a query as flags, e.g.: --pkg net/http --func Handle
+Other commands: help, reload, exit/quit
+
+wally> --pkg github.com/hex0punk/wally/sampleapp/printer --func PrintOrPanic
+...
+wally> --pkg github.com/hex0punk/wally/sampleapp/target --func DoWork --recv-type Client
+...
+wally> exit
+```
+
+At the `wally>` prompt, type the same flags you'd pass to `wally map search` (`--pkg`, `--func`, `--recv-type`, `--match-filter`, `-f`/`--filter`, `--limiter-mode`, `--search-alg`, `--max-paths`, `--simplify`, `--format`, `--out`, etc. — see `--pkg`/`--func` sections above for what each does). `help` at the prompt lists the full set.
+
+A few flags are **session-level** — set once when you launch `wally shell`, not per query, because changing them means rebuilding the whole callgraph:
+
+- `--paths` / `-p`: same as `map search`'s `-p` — the packages to build SSA for. Include every package you might query about up front; scope isn't something you can widen mid-session (see `reload` below).
+- `--callgraph-alg`: `cha` (default, fastest, most over-approximate), `rta`, `vta` (slowest, most precise — resolves interface dispatch via a real points-to analysis instead of "any type that satisfies this interface, anywhere"), or `static`.
+- `--config` / `-c`, `--skip-default`: same meaning as elsewhere in this README — preload a YAML indicator file, optionally skipping the built-in HTTP/gRPC indicators.
+- `--exclude-pkg`, `--exclude-pos`: same as `map`'s equivalents.
+- `--no-auto-deps`: by default, the SSA build set auto-expands to the same-module transitive closure of `--paths`, so a call chain that routes through an unlisted-but-same-module helper package doesn't silently look like a dead end. Set this only if `--paths` already lists everything a path might route through.
+
+Two extra shell-only commands:
+
+- `reload`: rebuilds the callgraph from disk using the same session-level flags you started with — use this after editing source, not to add new paths (for that, start a new `wally shell` with a wider `--paths`).
+- `exit` / `quit`: leave the shell.
 
 ## Using Wally in Fuzzing Efforts to Determine Fault Tolerance of Call Paths
 

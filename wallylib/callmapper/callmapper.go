@@ -86,8 +86,15 @@ func NewCallMapper(match *match.RouteMatch, nodes map[*ssa.Function]*callgraph.N
 }
 
 func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
-	encPkg := cm.Match.SSA.EnclosedByFunc.Pkg
-	encBasePos := wallylib.GetFormattedPos(encPkg, cm.Match.SSA.EnclosedByFunc.Pos())
+	// GetFormattedPosFromFunc, not GetFormattedPos(EnclosedByFunc.Pkg, ...):
+	// EnclosedByFunc can be a synthetic $bound-method-value wrapper (see
+	// wallylib.IsBoundFunc), which has no *ssa.Package at all (Pkg is nil)
+	// -- GetFormattedPos unconditionally dereferences pkg.Prog and panics
+	// on that nil, which real matches can and do produce (e.g. a bare
+	// value-reference match, see Navigator.matchFuncValueRef, enclosed by
+	// a bound-value wrapper itself). GetFormattedPosFromFunc reads Prog
+	// off the function directly, which synthetic wrappers still have.
+	encBasePos := wallylib.GetFormattedPosFromFunc(cm.Match.SSA.EnclosedByFunc, cm.Match.SSA.EnclosedByFunc.Pos())
 	rec := wallynode.IsRecoverable(s, cm.CallgraphNodes)
 	encStr := wallynode.GetNodeString(encBasePos, s, rec)
 
@@ -113,12 +120,27 @@ func (cm *CallMapper) initPath(s *callgraph.Node) []wallynode.WallyNode {
 		siteStr = fmt.Sprintf("%s.[%s] %s", cm.Match.Indicator.Package, cm.Match.Indicator.Function, cm.Match.Pos.String())
 		cm.Match.SSA.TargetPos = siteStr
 	} else {
-		sitePkg := cm.Match.SSA.SSAInstruction.Parent().Pkg
+		siteFunc := cm.Match.SSA.SSAInstruction.Parent()
+		sitePkg := siteFunc.Pkg
 
 		// cm.Options.Simplify should be false if here
-		siteBasePos := wallylib.GetFormattedPos(sitePkg, cm.Match.SSA.SSAInstruction.Pos())
+		//
+		// GetFormattedPosFromFunc, not GetFormattedPos(sitePkg, ...): the
+		// call site's enclosing function (siteFunc) can likewise be a
+		// synthetic wrapper with a nil Pkg -- see the identical reasoning
+		// on encBasePos above.
+		siteBasePos := wallylib.GetFormattedPosFromFunc(siteFunc, cm.Match.SSA.SSAInstruction.Pos())
 		if cm.Match.SSA.SSAFunc == nil {
-			siteStr = fmt.Sprintf("%s.[%s] %s", sitePkg.Pkg.Name(), cm.Match.Indicator.Function, siteBasePos)
+			// sitePkg.Pkg.Name() needs an actual package to read the name
+			// off of; fall back to the synthetic function's own name
+			// (e.g. "(*T).M$bound") when there isn't one, rather than
+			// panicking on the nil the same way the position lookup above
+			// would have.
+			pkgName := siteFunc.Name()
+			if sitePkg != nil {
+				pkgName = sitePkg.Pkg.Name()
+			}
+			siteStr = fmt.Sprintf("%s.[%s] %s", pkgName, cm.Match.Indicator.Function, siteBasePos)
 		} else {
 			targetFuncNode := cm.CallgraphNodes[cm.Match.SSA.SSAFunc]
 			isRec := wallynode.IsRecoverable(targetFuncNode, cm.CallgraphNodes)
